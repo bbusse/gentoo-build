@@ -1,0 +1,30 @@
+app-emulation/libvirt audit lxc policykit numa sasl virt-network zeroconf
+app-emulation/libvirt-glib python
+app-emulation/qemu aio caps fdt gtk usb usbredir numa opengl virgl vde vte virtfs
+app-text/ghostscript-gpl cups
+#dev-lang/rust system-llvm
+gui-wm/sway -swayidle
+media-libs/libepoxy X
+media-libs/libglvnd X
+media-libs/libsndfile minimal
+media-libs/libvpx postproc
+media-libs/mesa X
+media-fonts/noto X
+media-gfx/imagemagick fontconfig pango svg webp xml X
+media-sound/ncmpcpp clock curl outputs taglib visualizer
+media-video/mpv drm -xscreensaver vaapi libmpv cli -xv
+media-video/libav tools vaapi vdpau X
+media-video/ffmpeg tools vaapi vdpau X
+media-video/pipewire bluetooth dbus flatpak gstreamer
+net-dns/dnsmasq script
+dev-libs/boost icu nls
+net-misc/spice-gtk gtk3 usbredir python
+net-wireless/bluez cups user-session
+net-wireless/hostapd netlink
+sys-apps/dbus systemd dbus user-session X
+sys-fs/cryptsetup -udev
+sys-apps/systemd audit curl lzma gcrypt importd policykit qrcode xkb
+www-client/firefox dbus hwaccel system-harfbuzz system-icu system-jpeg system-libevent system-libvpx system-sqlite
+x11-libs/cairo opengl X
+x11-libs/gtk+ X
+x11-libs/libxkbcommon X

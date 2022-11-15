@@ -1,0 +1,4 @@
+app-emulation/libvirt
+app-emulation/libvirt-glib
+app-emulation/qemu
+net-misc/spice-gtk

@@ -1,0 +1,9 @@
+app-admin/ansible-lint ~amd64
+app-emulation/diskimage-builder ~arm64
+app-emulation/libvirt-glib ~arm64
+app-text/zathura-9999 **
+mail-client/aerc ~amd64
+media-sound/ncmpcpp-9999 **
+sys-firmware/intel-microcode ~amd64
+x11-misc/i3status ~arm64
+x11-misc/py3status ~amd64

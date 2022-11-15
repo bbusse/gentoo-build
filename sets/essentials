@@ -1,0 +1,6 @@
+app-editors/vim
+app-shells/zsh
+app-shells/gentoo-zsh-completions
+app-misc/tmux
+app-arch/unzip
+app-arch/xz-utils
