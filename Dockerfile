@@ -23,7 +23,7 @@ RUN rm -rf /.git || printf "No .git in /\n" && \
            --buildpkg-exclude \
            "virtual/* \
            sys-kernel/*-sources" \
-           #@dev \
+           @dev \
            #@dev-lang \
            @desktop \
            @essentials \
