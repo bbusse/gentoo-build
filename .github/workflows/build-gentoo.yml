@@ -1,0 +1,39 @@
+name: Build Gentoo Stage4
+
+on:
+  push:
+    paths-ignore:
+      - '**.md'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Stage4
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Checkout image-builder
+        uses: actions/checkout@v3
+        with:
+          repository: 'OpsBoost/image-builder'
+          path: 'image-builder'
+
+      - name: Build
+        run: |
+          sudo ./image-builder/image-builder install
+          image-builder build gentoo
+
+      - name: Release
+        uses: "marvinpinto/action-automatic-releases@latest"
+        with:
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          prerelease: false
+          automatic_release_tag: "latest"
+          files: |
+            gentoo-binpkgs.tar.xz
+            gentoo-binpkgs.tar.xz.sha384
