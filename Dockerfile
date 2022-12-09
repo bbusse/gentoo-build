@@ -29,4 +29,5 @@ RUN rm -rf /.git || printf "No .git in /\n" && \
            @essentials \
            #@virt \
            @net && \
-    tar --directory /output -cJvf gentoo-binpkgs.xz /var/cache/binpkgs
+    tar --directory /output -cJvf gentoo-binpkgs.tar.xz /var/cache/binpkgs && \
+    sha384sum /output/gentoo-binpkgs.tar.xz > /output/gentoo-binpkgs.tar.xz.sha384
