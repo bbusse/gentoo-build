@@ -5,10 +5,7 @@ media-fonts/noto
 media-gfx/imagemagick
 media-sound/ncmpcpp-9999
 media-video/pipewire
-net-analyzer/nmap
-net-vpn/openvpn
 net-wireless/bluez
 sys-apps/flatpak
-sys-apps/iproute2
 x11-misc/py3status
 #www-client/firefox

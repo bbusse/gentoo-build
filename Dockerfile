@@ -25,9 +25,8 @@ RUN rm -rf /.git || printf "No .git in /\n" && \
            sys-kernel/*-sources" \
            #@dev \
            #@dev-lang \
-           #@desktop \
-           #@essentials \
+           @desktop \
+           @essentials \
            #@virt \
-           #@net \
-           gui-wm/sway && \
+           @net && \
     tar --directory /output -cJvf gentoo-binpkgs.xz /var/cache/binpkgs

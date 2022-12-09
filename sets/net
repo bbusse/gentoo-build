@@ -1,2 +1,3 @@
-net-wireless/hostapd
+net-vpn/openvpn
 net-wireless/iwd
+sys-apps/iproute2
