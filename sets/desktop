@@ -1,11 +1,10 @@
-app-text/zathura-9999
+#app-text/zathura-9999
 gui-wm/sway
 #mail-client/aerc
 media-fonts/noto
-media-gfx/imagemagick
-media-sound/ncmpcpp-9999
+#media-gfx/imagemagick
+#media-sound/ncmpcpp-9999
 media-video/pipewire
-net-wireless/bluez
-sys-apps/flatpak
+#sys-apps/flatpak
 x11-misc/py3status
 #www-client/firefox
