@@ -1,5 +1,5 @@
-app-admin/ansible
+#app-admin/ansible
 #app-admin/ansible-lint
 #app-emulation/diskimage-builder
-dev-util/catalyst
-dev-vcs/git
+#dev-util/catalyst
+#dev-vcs/git

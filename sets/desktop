@@ -4,7 +4,7 @@ gui-wm/sway
 media-fonts/noto
 #media-gfx/imagemagick
 #media-sound/ncmpcpp-9999
-media-video/pipewire
+#media-video/pipewire
 #sys-apps/flatpak
 x11-misc/py3status
 #www-client/firefox
