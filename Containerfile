@@ -7,11 +7,11 @@ COPY --from=portage /var/db/repos/gentoo /var/db/repos/gentoo
 RUN mkdir -p /etc/portage/package.use && \
     mkdir -p /etc/portage/package.unmask
 
-COPY make.conf /etc/portage/
-COPY package.use /etc/portage/package.use/
-COPY package.unmask/* /etc/portage/package.unmask/
-COPY package.accept_keywords /etc/portage/package.accept_keywords/
-ADD sets /etc/portage/sets
+COPY gentoo-config/make.conf /etc/portage/
+COPY gentoo-config/package.use /etc/portage/package.use/
+COPY gentoo-config/package.unmask/* /etc/portage/package.unmask/
+COPY gentoo-config/package.accept_keywords /etc/portage/package.accept_keywords/
+ADD gentoo-config/sets /etc/portage/sets
 
 # Build
 # https://bugs.gentoo.org/878489
