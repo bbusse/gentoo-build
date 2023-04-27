@@ -1,5 +1,6 @@
 FROM gentoo/portage:latest as portage
 FROM gentoo/stage3:latest
+ARG TARGETARCH
 
 # Copy portage volume
 COPY --from=portage /var/db/repos/gentoo /var/db/repos/gentoo
@@ -26,7 +27,7 @@ RUN rm -rf /.git || printf "No .git in /\n" && \
            @dev \
            @essentials \
            @net && \
-    tar -cJf /gentoo-stage4-container.tar.xz /var/cache/binpkgs && \
-    sha384sum /gentoo-stage4-container.tar.xz > /gentoo-stage4-container.tar.xz.sha384 && \
-    cp /gentoo-stage4-container.tar.xz /output && \
-    cp /gentoo-stage4-container.tar.xz.sha384 /output
+    tar -cJf /gentoo-stage4-container-${TARGETARCH}.tar.xz /var/cache/binpkgs && \
+    sha384sum /gentoo-stage4-container-${TARGETARCH}.tar.xz > /gentoo-stage4-container-${TARGETARCH}.tar.xz.sha384 && \
+    cp /gentoo-stage4-container-${TARGETARCH}.tar.xz /output && \
+    cp /gentoo-stage4-container-${TARGETARCH}.tar.xz.sha384 /output
