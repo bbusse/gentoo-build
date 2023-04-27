@@ -26,6 +26,7 @@ RUN rm -rf /.git || printf "No .git in /\n" && \
            @dev \
            @essentials \
            @net && \
-    tar -cJf /gentoo-binpkgs.tar.xz /var/cache/binpkgs && \
-    sha384sum /gentoo-binpkgs.tar.xz > /gentoo-binpkgs.tar.xz.sha384 && \
-    cp /gentoo-binpkgs.tar.xz /output
+    tar -cJf /gentoo-stage4-container.tar.xz /var/cache/binpkgs && \
+    sha384sum /gentoo-stage4-container.tar.xz > /gentoo-stage4-container.tar.xz.sha384 && \
+    cp /gentoo-stage4-container.tar.xz /output && \
+    cp /gentoo-stage4-container.tar.xz.sha384 /output
