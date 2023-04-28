@@ -1,6 +1,8 @@
 FROM gentoo/portage:latest as portage
 FROM gentoo/stage3:latest
 ARG TARGETARCH
+LABEL maintainer="Björn Busse <bj.rn@baerlin.eu>"
+LABEL org.opencontainers.image.source=https://github.com/bbusse/linux-kernel-build
 
 # Copy portage volume
 COPY --from=portage /var/db/repos/gentoo /var/db/repos/gentoo
