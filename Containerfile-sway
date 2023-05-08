@@ -34,5 +34,5 @@ RUN rm -rf /.git || printf "No .git in /\n" && \
            @net && \
     tar -cJf /gentoo-stage4-sway-${TARGETARCH}.tar.xz /var/cache/binpkgs && \
     sha384sum /gentoo-stage4-sway-${TARGETARCH}.tar.xz > /gentoo-stage4-sway-${TARGETARCH}.tar.xz.sha384 && \
-    cp /gentoo-stage4-sway-${TARGETARCH}.tar.xz /output
+    cp /gentoo-stage4-sway-${TARGETARCH}.tar.xz /output && \
     cp /gentoo-stage4-sway-${TARGETARCH}.tar.xz.sha384 /output
