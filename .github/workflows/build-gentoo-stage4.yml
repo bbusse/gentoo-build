@@ -1,0 +1,37 @@
+name: Build Gentoo Stage4 - container
+
+on:
+  push:
+    paths-ignore:
+      - '**.md'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+  workflow_dispatch:
+
+jobs:
+  build_stage4_container:
+    strategy:
+      matrix:
+        arch: ["amd64"]
+        flavour: ["containeros", "sway"]
+
+    name: Build Stage4
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Checkout image-builder
+        uses: actions/checkout@v3
+        with:
+          repository: 'OpsBoost/image-builder'
+          ref: 'dev'
+          path: 'image-builder'
+
+      - name: Build
+        run: |
+          sudo ./image-builder/image-builder install
+          image-builder build gentoo-${{ matrix.flavour }} ${{ matrix.arch }}
+          echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u $GITHUB_ACTOR --password-stdin
+          podman push gentoo-stage4-${{ matrix.flavour }}-${{ matrix.arch }} ghcr.io/bbusse/gentoo-stage4-${{ matrix.flavour }}-${{ matrix.arch }}:latest
