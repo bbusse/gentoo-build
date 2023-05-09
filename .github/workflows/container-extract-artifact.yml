@@ -1,0 +1,61 @@
+name: Extract and release build artifact
+
+# Note: This event will only trigger a workflow run
+# if the workflow file is on the default branch
+# - So we need to run this workflow explicitly again
+# after the container are pushed to the registry
+#on:
+#  workflow_run:
+#    workflows: ["Build and release container"]
+#    branches: '**'
+#    types:
+#      - completed
+
+on:
+  push:
+    paths-ignore:
+      - '**.md'
+    branches:
+      - '**'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+    branches:
+      - '**'
+  workflow_dispatch:
+
+jobs:
+  extract-artifacts:
+    strategy:
+      matrix:
+        arch: ["amd64"]
+        flavour: ["containeros", "sway"]
+
+    runs-on: ubuntu-latest
+    env:
+      USER: build
+      PKG_NAME: "gentoo-stage4"
+      PKG_VERSION: "latest"
+
+    steps:
+
+    - name: Wait for container release
+      uses: lewagon/wait-on-check-action@v1.3.1
+      with:
+        ref: ${{ github.ref }}
+        check-name: 'build-and-release-container'
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
+        wait-interval: 10
+
+    - name: Extract build artifact from build container
+      uses: bbusse/actions-docker-extract@latest
+      id: ${{ matrix.flavour }}
+      with:
+        image: "ghcr.io/bbusse/swayvnc-build:latest"
+        path: "home/$USER/$WAYVNC_PKG_NAME-$WAYVNC_PKG_VERSION.apk"
+        platform: linux/amd64
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ env.PKG_NAME }}-${{ matrix.flavour }}-${{ matrix.arch }}.tar.xz*
