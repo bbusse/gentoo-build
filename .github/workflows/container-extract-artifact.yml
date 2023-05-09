@@ -49,7 +49,7 @@ jobs:
 
     - name: Extract build artifact from build container
       uses: bbusse/actions-docker-extract@latest
-      id: ${{ matrix.flavour }}
+      id: "${{ matrix.flavour }}"
       with:
         image: "ghcr.io/bbusse/swayvnc-build:latest"
         path: "home/$USER/$WAYVNC_PKG_NAME-$WAYVNC_PKG_VERSION.apk"
