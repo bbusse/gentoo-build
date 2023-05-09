@@ -35,3 +35,9 @@ jobs:
           image-builder build gentoo-${{ matrix.flavour }} ${{ matrix.arch }}
           echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u $GITHUB_ACTOR --password-stdin
           podman push gentoo-stage4-${{ matrix.flavour }}-${{ matrix.arch }} ghcr.io/bbusse/gentoo-stage4-${{ matrix.flavour }}-${{ matrix.arch }}:latest
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: gentoo-stage4
+          path: /output/gentoo-stage4-*

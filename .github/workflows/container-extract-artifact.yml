@@ -51,8 +51,8 @@ jobs:
       uses: bbusse/actions-docker-extract@latest
       id: extract
       with:
-        image: "ghcr.io/bbusse/swayvnc-build:latest"
-        path: "home/$USER/$WAYVNC_PKG_NAME-$WAYVNC_PKG_VERSION.apk"
+        image: "ghcr.io/bbusse/${{ env.PKG_NAME }}-${{ matrix.flavour }}-${{ matrix.arch }}:latest"
+        path: /${{ env.PKG_NAME }}-${{ matrix.flavour }}-${{ matrix.arch }}.tar.xz*
         platform: linux/amd64
 
     - name: Upload artifact
