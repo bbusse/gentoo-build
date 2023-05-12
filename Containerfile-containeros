@@ -26,7 +26,7 @@ RUN rm -rf /.git || printf "No .git in /\n" && \
            --buildpkg-exclude \
            "virtual/* \
            sys-kernel/*-sources" \
-           @dev \
+           @container-podman \
            @essentials \
            @net && \
     tar -cJf /gentoo-stage4-container-${TARGETARCH}.tar.xz /var/cache/binpkgs && \
