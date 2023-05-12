@@ -52,7 +52,7 @@ jobs:
       id: extract
       with:
         image: "ghcr.io/bbusse/${{ env.PKG_NAME }}-${{ matrix.flavour }}-${{ matrix.arch }}:latest"
-        path: /${{ env.PKG_NAME }}-${{ matrix.flavour }}-${{ matrix.arch }}.tar.xz*
+        path: ${{ env.PKG_NAME }}-${{ matrix.flavour }}-${{ matrix.arch }}.tar.xz*
         platform: linux/amd64
 
     - name: Upload artifact
