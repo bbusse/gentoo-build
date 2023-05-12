@@ -28,7 +28,7 @@ RUN rm -rf /.git || printf "No .git in /\n" && \
            sys-kernel/*-sources" \
            @dev \
            @dev-lang \
-           @desktop-sway \
+           @sway \
            @essentials \
            @virt \
            @net && \
