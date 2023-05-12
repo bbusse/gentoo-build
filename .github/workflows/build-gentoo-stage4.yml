@@ -13,7 +13,7 @@ jobs:
   build_stage4_container:
     strategy:
       matrix:
-        arch: ["amd64", "arm64"]
+        arch: ["amd64"]
         flavour: ["containeros", "sway"]
 
     name: Build Stage4
