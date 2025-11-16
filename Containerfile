@@ -11,7 +11,7 @@ COPY --from=portage /var/db/repos/gentoo /var/db/repos/gentoo
 RUN mkdir -p /etc/portage/package.use && \
     mkdir -p /etc/portage/package.unmask
 
-COPY gentoo-config/emerge.sh /usr/local/bin
+COPY emerge.sh /usr/local/bin
 COPY gentoo-config/make.conf /etc/portage/
 COPY gentoo-config/package.use /etc/portage/package.use/
 COPY gentoo-config/package.unmask/* /etc/portage/package.unmask/
