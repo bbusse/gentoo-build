@@ -6,7 +6,7 @@ main() {
     local target_flavour
     target_flavour="$1"
 
-    case "target_flavour" in:
+    case "$target_flavour" in
     containeros)
         emerge -qv \
                --buildpkg \
