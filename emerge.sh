@@ -4,9 +4,11 @@ set -eo pipefail
 
 main() {
     local target_flavour
-    target_flavour="$1"
+    target_flavour="${1}"
 
-    case "$target_flavour" in
+    printf "Building gentoo flavour: %s\n" "${target_flavour}"
+
+    case "${target_flavour}" in
     containeros)
         emerge -qv \
                --buildpkg \
