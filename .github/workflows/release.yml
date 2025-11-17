@@ -1,0 +1,35 @@
+name: Release Gentoo Stage4
+
+on:
+  push:
+    paths-ignore:
+      - '**.md'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+  workflow_dispatch:
+
+jobs:
+  release:
+    name: Release Stage4
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for build - arm64 container flavour
+        uses: lewagon/wait-on-check-action@v1.3.1
+        with:
+          ref: ${{ github.ref }}
+          check-regexp: Build*
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 60
+
+      - name: Release
+        uses: "marvinpinto/action-automatic-releases@latest"
+        with:
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          prerelease: false
+          automatic_release_tag: "latest"
+          files: |
+            /output/gentoo-stage4-container-amd64.tar.xz
+            /output/gentoo-stage4-container-amd64.tar.xz.sha384
+            /output/gentoo-stage4-sway-arm64.tar.xz
+            /output/gentoo-stage4-sway-arm64.tar.xz.sha384
