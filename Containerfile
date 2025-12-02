@@ -1,6 +1,6 @@
 FROM gentoo/portage:latest as portage
 #FROM gentoo/stage3-amd64-systemd:latest
-#FROM gentoo/stage3:latest
+FROM gentoo/stage3:systemd
 ARG TARGET_ARCH
 ARG TARGET_FLAVOUR
 LABEL maintainer="Björn Busse <bj.rn@baerlin.eu>"
