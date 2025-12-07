@@ -1,0 +1,21 @@
+name: Create Disk Image
+
+on:
+  push:
+    paths-ignore:
+      - '**.md'
+    branches:
+      - '**'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+    branches:
+      - '**'
+  workflow_dispatch:
+jobs:
+
+  run-create:
+    name: Create disk image
+    uses: bbusse/github-workflows/.github/workflows/create-disk-image.yml@dev
+    with:
+      target: gentoo
