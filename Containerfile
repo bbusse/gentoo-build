@@ -4,7 +4,7 @@ FROM gentoo/stage3:systemd
 ARG TARGET_ARCH
 ARG TARGET_FLAVOUR
 LABEL maintainer="Björn Busse <bj.rn@baerlin.eu>"
-LABEL org.opencontainers.image.source=https://github.com/bbusse/linux-kernel-build
+LABEL org.opencontainers.image.source=https://github.com/bbusse/gentoo-build
 
 # Copy portage volume
 COPY --from=portage /var/db/repos/gentoo /var/db/repos/gentoo
@@ -28,7 +28,7 @@ RUN mkdir /gentoo && cd /gentoo && \
     rm -rf /var/.git || printf "No .git in /var\n" && \
     rm -rf /var/tmp/.git || printf "No .git in /var/tmp\n" && \
     emerge.sh "${TARGET_FLAVOUR}" && \
-    tar -cJf /gentoo-stage4-sway-${TARGET_ARCH}.tar.xz /var/cache/binpkgs && \
-    sha384sum /gentoo-stage4-sway-${TARGET_ARCH}.tar.xz > /gentoo-stage4-sway-${TARGET_ARCH}.tar.xz.sha384 && \
-    cp /gentoo-stage4-sway-${TARGET_ARCH}.tar.xz /output && \
-    cp /gentoo-stage4-sway-${TARGET_ARCH}.tar.xz.sha384 /output
+    tar -cJf /gentoo-stage4-${TARGET_FLAVOUR}-${TARGET_ARCH}.tar.xz /var/cache/binpkgs && \
+    sha384sum /gentoo-stage4-${TARGET_FLAVOUR}-${TARGET_ARCH}.tar.xz > /gentoo-stage4-${TARGET_FLAVOUR}-${TARGET_ARCH}.tar.xz.sha384 && \
+    cp /gentoo-stage4-${TARGET_FLAVOUR}-${TARGET_ARCH}.tar.xz /output && \
+    cp /gentoo-stage4-${TARGET_FLAVOUR}-${TARGET_ARCH}.tar.xz.sha384 /output
