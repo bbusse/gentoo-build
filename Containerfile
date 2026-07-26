@@ -13,11 +13,18 @@ RUN mkdir -p /etc/portage/package.use && \
     mkdir -p /etc/portage/package.unmask
 
 COPY emerge.sh /usr/local/bin
-COPY gentoo-config/make.conf /etc/portage/
-COPY gentoo-config/package.use /etc/portage/package.use/
-COPY gentoo-config/package.unmask/* /etc/portage/package.unmask/
-COPY gentoo-config/package.accept_keywords /etc/portage/package.accept_keywords/
-ADD gentoo-config/sets /etc/portage/sets
+
+# Fetch portage config from the separate gentoo-config repo
+ARG GENTOO_CONFIG_REF=main
+RUN curl -L "https://github.com/bbusse/gentoo-config/archive/refs/heads/${GENTOO_CONFIG_REF}.tar.gz" | \
+        tar -xzf - -C /tmp && \
+    mv /tmp/gentoo-config-${GENTOO_CONFIG_REF} /tmp/gentoo-config && \
+    cp /tmp/gentoo-config/make.conf /etc/portage/ && \
+    cp /tmp/gentoo-config/package.use /etc/portage/package.use/ && \
+    cp /tmp/gentoo-config/package.unmask/* /etc/portage/package.unmask/ && \
+    cp /tmp/gentoo-config/package.accept_keywords /etc/portage/package.accept_keywords/ && \
+    cp -r /tmp/gentoo-config/sets /etc/portage/sets && \
+    rm -rf /tmp/gentoo-config
 
 # Build
 # https://bugs.gentoo.org/878489
