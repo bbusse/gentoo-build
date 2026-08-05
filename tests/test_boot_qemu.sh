@@ -158,5 +158,10 @@ teardown_suite() {
         kill "$QEMU_PID" 2>/dev/null
         wait "$QEMU_PID" 2>/dev/null
     fi
+    if [ -n "$SERIAL_LOG" ] && [ -f "$SERIAL_LOG" ]; then
+        echo "----- guest serial console -----"
+        cat "$SERIAL_LOG"
+        echo "----- end guest serial console -----"
+    fi
     [ -n "$SERIAL_DIR" ] && rm -rf "$SERIAL_DIR"
 }
