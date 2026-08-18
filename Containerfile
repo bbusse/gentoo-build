@@ -27,11 +27,7 @@ RUN curl -L "https://github.com/bbusse/gentoo-config/archive/refs/heads/${GENTOO
     rm -rf /tmp/gentoo-config
 
 # Build
-# https://bugs.gentoo.org/878489
-RUN mkdir /gentoo && cd /gentoo && \
-    curl -LO https://mirror.netcologne.de/gentoo/releases/amd64/autobuilds/current-stage3-amd64-nomultilib-systemd/stage3-amd64-nomultilib-systemd-20251116T161545Z.tar.xz && \
-    tar xpvf stage3-*.tar.xz --xattrs-include='*.*' --numeric-owner -C /gentoo && \
-    rm -rf /.git || printf "No .git in /\n" && \
+RUN rm -rf /.git || printf "No .git in /\n" && \
     rm -rf /var/.git || printf "No .git in /var\n" && \
     rm -rf /var/tmp/.git || printf "No .git in /var/tmp\n" && \
     emerge.sh "${TARGET_FLAVOUR}" && \
