@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+#
+# SPDX-FileCopyrightText: Björn Busse <bj.rn@baerlin.eu>
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# Usage: ./run [path-to-disk.raw]
+#
+# Environment:
+#   ARCH         Target arch to boot (amd64|arm64). Defaults to the host arch.
+#   DISK_IMAGE   Disk image to boot. Defaults to gentoo-containeros-<ARCH>.raw
+#   SERIAL_PIPE  Base path of a mkfifo pair (<base>.in/<base>.out). When set,
+#                the guest console is wired to it instead of the terminal.
+#   QEMU_NET     user|vmnet-shared. Defaults to vmnet-shared on macOS
+#                (needs root) and user everywhere else.
+#   QEMU_ACCEL   Accelerator to request when guest arch matches the host.
+#   QEMU_MEM     Guest memory in MB. Defaults to 2048.
+
+set -eo pipefail
+
+HOST_OS="$(uname -s)"
+case "$(uname -m)" in
+arm64 | aarch64) HOST_ARCH="arm64" ;;
+x86_64 | amd64) HOST_ARCH="amd64" ;;
+*)
+    printf 'Unsupported host architecture: %s\n' "$(uname -m)" >&2
+    exit 1
+    ;;
+esac
+
+ARCH="${ARCH:-${HOST_ARCH}}"
+QEMU_MEM="${QEMU_MEM:-2048}"
+
+if [ "${HOST_OS}" = "Darwin" ]; then
+    QEMU_NET="${QEMU_NET:-vmnet-shared}"
+else
+    QEMU_NET="${QEMU_NET:-user}"
+fi
+
+case "${ARCH}" in
+arm64)
+    QEMU_BIN="qemu-system-aarch64"
+    QEMU_MACHINE="virt"
+    QEMU_CPU="max"
+    FIRMWARE_CODE_NAMES=(edk2-aarch64-code.fd AAVMF_CODE.fd QEMU_EFI.fd)
+    FIRMWARE_VARS_NAMES=(edk2-arm-vars.fd AAVMF_VARS.fd QEMU_VARS.fd)
+    DISK_DEVICE_ARGS=(-device "virtio-blk-pci,drive=disk0")
+    ;;
+amd64)
+    QEMU_BIN="qemu-system-x86_64"
+    QEMU_MACHINE="q35"
+    QEMU_CPU="qemu64"
+    FIRMWARE_CODE_NAMES=(edk2-x86_64-code.fd OVMF_CODE_4M.fd OVMF_CODE.fd OVMF.fd)
+    FIRMWARE_VARS_NAMES=(edk2-i386-vars.fd OVMF_VARS_4M.fd OVMF_VARS.fd)
+    DISK_DEVICE_ARGS=(-device "ahci,id=ahci0" -device "ide-hd,drive=disk0,bus=ahci0.0")
+    ;;
+*)
+    printf 'Unsupported target architecture: %s\n' "${ARCH}" >&2
+    exit 1
+    ;;
+esac
+
+DISK_IMAGE="${1:-${DISK_IMAGE:-gentoo-containeros-${ARCH}.raw}}"
+
+# vmnet-shared needs root (no com.apple.vm.networking entitlement on
+# the Homebrew qemu build); user networking does not
+if [ "${QEMU_NET}" = "vmnet-shared" ] && [ "$(id -u)" -ne 0 ]; then
+    exec sudo --preserve-env=ARCH,DISK_IMAGE,SERIAL_PIPE,QEMU_NET,QEMU_ACCEL,QEMU_MEM "$0" "$@"
+fi
+
+if ! command -v "${QEMU_BIN}" >/dev/null 2>&1; then
+    printf 'qemu binary not found: %s\n' "${QEMU_BIN}" >&2
+    printf 'Install qemu (Homebrew: qemu, Debian/Ubuntu: qemu-system-%s)\n' \
+        "$([ "${ARCH}" = arm64 ] && printf arm || printf x86)" >&2
+    exit 1
+fi
+
+firmware_dirs() {
+    local qemu_share
+    qemu_share="$(dirname "$(command -v "${QEMU_BIN}")")/../share/qemu"
+    printf '%s\n' \
+        "${qemu_share}" \
+        /usr/share/qemu \
+        /usr/share/OVMF \
+        /usr/share/ovmf \
+        /usr/share/AAVMF \
+        /usr/share/qemu-efi-aarch64 \
+        /usr/share/edk2/ovmf \
+        /usr/share/edk2/aarch64 \
+        /usr/share/edk2-ovmf
+}
+
+find_firmware() {
+    local dir name
+    for name in "$@"; do
+        while read -r dir; do
+            if [ -f "${dir}/${name}" ]; then
+                printf '%s' "${dir}/${name}"
+                return 0
+            fi
+        done < <(firmware_dirs)
+    done
+    return 1
+}
+
+file_size() {
+    stat -f%z "$1" 2>/dev/null || stat -c%s "$1"
+}
+
+if [ ! -f "${DISK_IMAGE}" ]; then
+    printf 'Disk image not found: %s\n' "${DISK_IMAGE}" >&2
+    exit 1
+fi
+
+FIRMWARE_CODE="$(find_firmware "${FIRMWARE_CODE_NAMES[@]}")" || {
+    printf 'UEFI code firmware not found for arch %s (looked for: %s)\n' \
+        "${ARCH}" "${FIRMWARE_CODE_NAMES[*]}" >&2
+    exit 1
+}
+
+VARS_DIR="$(mktemp -d)"
+FIRMWARE_VARS="${VARS_DIR}/firmware-vars.fd"
+trap 'rm -rf "${VARS_DIR}"' EXIT
+
+if FIRMWARE_VARS_SRC="$(find_firmware "${FIRMWARE_VARS_NAMES[@]}")"; then
+    cp "${FIRMWARE_VARS_SRC}" "${FIRMWARE_VARS}"
+else
+    FIRMWARE_VARS_SRC="(zeroed, no template found)"
+    dd if=/dev/zero of="${FIRMWARE_VARS}" bs=1 count=0 \
+        seek="$(file_size "${FIRMWARE_CODE}")" 2>/dev/null
+fi
+
+QEMU_MACHINE_ARG="${QEMU_MACHINE}"
+if [ "${ARCH}" != "${HOST_ARCH}" ]; then
+    QEMU_MACHINE_ARG="${QEMU_MACHINE},accel=tcg"
+elif [ -n "${QEMU_ACCEL}" ]; then
+    QEMU_MACHINE_ARG="${QEMU_MACHINE},accel=${QEMU_ACCEL}"
+fi
+
+if [ "${QEMU_NET}" = "vmnet-shared" ]; then
+    NET_ARGS=(-netdev "vmnet-shared,id=net0" -device "virtio-net-pci,netdev=net0")
+else
+    NET_ARGS=(-nic "user,model=virtio-net-pci")
+fi
+
+if [ -n "${SERIAL_PIPE}" ]; then
+    SERIAL_ARGS=(-serial pipe:"${SERIAL_PIPE}" -display none)
+else
+    SERIAL_ARGS=(-nographic)
+fi
+
+printf 'Host:          %s/%s\n' "${HOST_OS}" "${HOST_ARCH}"
+printf 'Target arch:   %s\n' "${ARCH}"
+printf 'Machine:       %s\n' "${QEMU_MACHINE_ARG}"
+printf 'Disk image:    %s\n' "${DISK_IMAGE}"
+printf 'Firmware code: %s\n' "${FIRMWARE_CODE}"
+printf 'Firmware vars: %s\n' "${FIRMWARE_VARS_SRC}"
+printf 'Networking:    %s\n' "${QEMU_NET}"
+printf '\n'
+
+exec "${QEMU_BIN}" \
+    -m "${QEMU_MEM}" \
+    -machine "${QEMU_MACHINE_ARG}" \
+    -cpu "${QEMU_CPU}" \
+    -no-reboot \
+    "${SERIAL_ARGS[@]}" \
+    "${NET_ARGS[@]}" \
+    -drive if=pflash,format=raw,readonly=on,file="${FIRMWARE_CODE}" \
+    -drive if=pflash,format=raw,file="${FIRMWARE_VARS}" \
+    -drive if=none,format=raw,file="${DISK_IMAGE}",id=disk0 \
+    "${DISK_DEVICE_ARGS[@]}"
