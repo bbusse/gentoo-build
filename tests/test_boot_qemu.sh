@@ -14,8 +14,8 @@
 # has no AHCI/IDE controller at all, and the arm64-vm kernel config was
 # built specifically with CONFIG_VIRTIO_BLK for this machine type).
 
-DISK_IMAGE="${DISK_IMAGE:-gentoo-containeros.raw}"
 QEMU_ARCH="${QEMU_ARCH:-amd64}"
+DISK_IMAGE="${DISK_IMAGE:-gentoo-containeros-${QEMU_ARCH}.raw}"
 BOOT_TIMEOUT="${BOOT_TIMEOUT:-300}"
 LOGIN_TIMEOUT="${LOGIN_TIMEOUT:-60}"
 ROOT_PASSWORD="gentoo"
@@ -23,6 +23,7 @@ ROOT_PASSWORD="gentoo"
 QEMU_PID=""
 SERIAL_DIR=""
 SERIAL_LOG=""
+QEMU_LOG=""
 PIPE_BASE=""
 READER_PID=""
 FIRMWARE_VARS_COPY=""
@@ -57,7 +58,8 @@ find_firmware_vars() {
     case "$QEMU_ARCH" in
     arm64)
         for candidate in \
-            /usr/share/AAVMF/AAVMF_VARS.fd
+            /usr/share/AAVMF/AAVMF_VARS.fd \
+            /usr/share/qemu-efi-aarch64/QEMU_VARS.fd
         do
             [ -f "$candidate" ] && { printf '%s' "$candidate"; return 0; }
         done
@@ -113,6 +115,7 @@ setup_suite() {
 
     SERIAL_DIR="$(mktemp -d)"
     SERIAL_LOG="${SERIAL_DIR}/console.log"
+    QEMU_LOG="${SERIAL_DIR}/qemu.log"
     PIPE_BASE="${SERIAL_DIR}/serial"
     FIRMWARE_VARS_COPY="${SERIAL_DIR}/FIRMWARE_VARS.fd"
 
@@ -138,13 +141,13 @@ setup_suite() {
         qemu_bin="qemu-system-aarch64"
         qemu_machine="virt,accel=tcg"
         qemu_cpu="max"
-        disk_device_args=(-device virtio-blk-pci,drive=disk0)
+        disk_device_args=(-device "virtio-blk-pci,drive=disk0")
         ;;
     *)
         qemu_bin="qemu-system-x86_64"
         qemu_machine="q35,accel=tcg"
         qemu_cpu="qemu64"
-        disk_device_args=(-device ahci,id=ahci0 -device ide-hd,drive=disk0,bus=ahci0.0)
+        disk_device_args=(-device "ahci,id=ahci0" -device "ide-hd,drive=disk0,bus=ahci0.0")
         ;;
     esac
 
@@ -160,7 +163,7 @@ setup_suite() {
         -drive if=pflash,format=raw,file="${FIRMWARE_VARS_COPY}" \
         -drive if=none,format=raw,file="${DISK_IMAGE}",id=disk0 \
         "${disk_device_args[@]}" \
-        >/dev/null 2>&1 &
+        >"$QEMU_LOG" 2>&1 &
     QEMU_PID=$!
 }
 
@@ -196,6 +199,11 @@ teardown_suite() {
     if [ -n "$QEMU_PID" ]; then
         kill "$QEMU_PID" 2>/dev/null
         wait "$QEMU_PID" 2>/dev/null
+    fi
+    if [ -n "$QEMU_LOG" ] && [ -s "$QEMU_LOG" ]; then
+        echo "----- qemu stderr -----"
+        cat "$QEMU_LOG"
+        echo "----- end qemu stderr -----"
     fi
     if [ -n "$SERIAL_LOG" ] && [ -f "$SERIAL_LOG" ]; then
         echo "----- guest serial console -----"
