@@ -46,11 +46,13 @@ RUN mkdir -p /etc/portage/repos.conf && \
     done
 
 # Build
-RUN rm -rf /.git || printf "No .git in /\n" && \
+RUN target_arch="${TARGET_ARCH}" && \
+    unset TARGET_ARCH && \
+    rm -rf /.git || printf "No .git in /\n" && \
     rm -rf /var/.git || printf "No .git in /var\n" && \
     rm -rf /var/tmp/.git || printf "No .git in /var/tmp\n" && \
     emerge.sh "${TARGET_FLAVOUR}" && \
-    tar -cJf /gentoo-stage4-${TARGET_FLAVOUR}-${TARGET_ARCH}.tar.xz /var/cache/binpkgs && \
-    sha384sum /gentoo-stage4-${TARGET_FLAVOUR}-${TARGET_ARCH}.tar.xz > /gentoo-stage4-${TARGET_FLAVOUR}-${TARGET_ARCH}.tar.xz.sha384 && \
-    cp /gentoo-stage4-${TARGET_FLAVOUR}-${TARGET_ARCH}.tar.xz /output && \
-    cp /gentoo-stage4-${TARGET_FLAVOUR}-${TARGET_ARCH}.tar.xz.sha384 /output
+    tar -cJf /gentoo-stage4-${TARGET_FLAVOUR}-${target_arch}.tar.xz /var/cache/binpkgs && \
+    sha384sum /gentoo-stage4-${TARGET_FLAVOUR}-${target_arch}.tar.xz > /gentoo-stage4-${TARGET_FLAVOUR}-${target_arch}.tar.xz.sha384 && \
+    cp /gentoo-stage4-${TARGET_FLAVOUR}-${target_arch}.tar.xz /output && \
+    cp /gentoo-stage4-${TARGET_FLAVOUR}-${target_arch}.tar.xz.sha384 /output
