@@ -26,6 +26,22 @@ RUN curl -L "https://github.com/bbusse/gentoo-config/archive/refs/heads/${GENTOO
     cp -r /tmp/gentoo-config/sets /etc/portage/sets && \
     rm -rf /tmp/gentoo-config
 
+# Register any overlays needed by the sets above (e.g. x11-misc/vju for
+# @sway lives in bbusse-overlay, not the main tree) - space separated
+# repo URLs, repo name taken from each URL's basename. git isn't
+# installed at this point in the base image, so fetch a tarball of the
+# default branch the same way gentoo-config is fetched above, rather
+# than git clone
+ARG GENTOO_OVERLAYS=""
+RUN mkdir -p /etc/portage/repos.conf && \
+    for url in ${GENTOO_OVERLAYS}; do \
+        name="$(basename "${url%.git}")" && \
+        printf '[%s]\nlocation = /var/db/repos/%s\nsync-type = git\nsync-uri = %s\nauto-sync = yes\n' \
+            "${name}" "${name}" "${url}" > /etc/portage/repos.conf/"${name}".conf && \
+        curl -L "${url}/archive/refs/heads/main.tar.gz" | tar -xzf - -C /tmp && \
+        mv /tmp/"${name}"-main /var/db/repos/"${name}"; \
+    done
+
 # Build
 RUN rm -rf /.git || printf "No .git in /\n" && \
     rm -rf /var/.git || printf "No .git in /var\n" && \

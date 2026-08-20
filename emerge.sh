@@ -44,6 +44,18 @@ main() {
                @virt \
                @net
         ;;
+    k3s)
+         emerge -qv \
+             --jobs "${emerge_jobs}" \
+             --load-average "${emerge_load}" \
+               --buildpkg \
+               --buildpkg-exclude \
+               "virtual/* \
+               sys-kernel/*-sources" \
+               @k8s \
+               @essentials \
+               @net
+        ;;
     esac
 }
 
