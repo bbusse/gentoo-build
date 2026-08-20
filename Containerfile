@@ -28,18 +28,21 @@ RUN curl -L "https://github.com/bbusse/gentoo-config/archive/refs/heads/${GENTOO
 
 # Register any overlays needed by the sets above (e.g. x11-misc/vju for
 # @sway lives in bbusse-overlay, not the main tree) - space separated
-# repo URLs, repo name taken from each URL's basename. git isn't
-# installed at this point in the base image, so fetch a tarball of the
-# default branch the same way gentoo-config is fetched above, rather
-# than git clone
+# repo URLs. git isn't installed at this point in the base image, so
+# fetch a tarball of the default branch the same way gentoo-config is
+# fetched above, rather than git clone. The repos.conf section name
+# must match the repo's own profiles/repo_name (Portage silently
+# ignores the repo otherwise), which doesn't necessarily match the
+# URL's basename - read it from the fetched tree instead of guessing
 ARG GENTOO_OVERLAYS=""
 RUN mkdir -p /etc/portage/repos.conf && \
     for url in ${GENTOO_OVERLAYS}; do \
-        name="$(basename "${url%.git}")" && \
-        printf '[%s]\nlocation = /var/db/repos/%s\nsync-type = git\nsync-uri = %s\nauto-sync = yes\n' \
-            "${name}" "${name}" "${url}" > /etc/portage/repos.conf/"${name}".conf && \
+        url_name="$(basename "${url%.git}")" && \
         curl -L "${url}/archive/refs/heads/main.tar.gz" | tar -xzf - -C /tmp && \
-        mv /tmp/"${name}"-main /var/db/repos/"${name}"; \
+        name="$(cat /tmp/"${url_name}"-main/profiles/repo_name)" && \
+        mv /tmp/"${url_name}"-main /var/db/repos/"${name}" && \
+        printf '[%s]\nlocation = /var/db/repos/%s\nsync-type = git\nsync-uri = %s\nauto-sync = yes\n' \
+            "${name}" "${name}" "${url}" > /etc/portage/repos.conf/"${name}".conf; \
     done
 
 # Build
