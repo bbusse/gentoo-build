@@ -14,6 +14,9 @@
 #                (needs root) and user everywhere else.
 #   QEMU_ACCEL   Accelerator to request when guest arch matches the host.
 #   QEMU_MEM     Guest memory in MB. Defaults to 2048.
+#   QEMU_AUDIODEV Audio backend for virtio-sound (coreaudio|alsa|pa|none|...).
+#                Defaults to coreaudio on macOS, none (silent, no host audio
+#                dependency) everywhere else.
 
 set -eo pipefail
 
@@ -32,8 +35,10 @@ QEMU_MEM="${QEMU_MEM:-2048}"
 
 if [ "${HOST_OS}" = "Darwin" ]; then
     QEMU_NET="${QEMU_NET:-vmnet-shared}"
+    QEMU_AUDIODEV="${QEMU_AUDIODEV:-coreaudio}"
 else
     QEMU_NET="${QEMU_NET:-user}"
+    QEMU_AUDIODEV="${QEMU_AUDIODEV:-none}"
 fi
 
 case "${ARCH}" in
@@ -43,7 +48,8 @@ arm64)
     QEMU_CPU="max"
     FIRMWARE_CODE_NAMES=(edk2-aarch64-code.fd AAVMF_CODE.fd QEMU_EFI.fd)
     FIRMWARE_VARS_NAMES=(edk2-arm-vars.fd AAVMF_VARS.fd QEMU_VARS.fd)
-    DISK_DEVICE_ARGS=(-device "virtio-blk-pci,drive=disk0")
+    DISK_DEVICE_ARGS=(-device "virtio-blk-pci,drive=disk0,romfile=")
+    GLOBAL_ARGS=(-global "virtio-pci.romfile=")
     ;;
 amd64)
     QEMU_BIN="qemu-system-x86_64"
@@ -52,6 +58,7 @@ amd64)
     FIRMWARE_CODE_NAMES=(edk2-x86_64-code.fd OVMF_CODE_4M.fd OVMF_CODE.fd OVMF.fd)
     FIRMWARE_VARS_NAMES=(edk2-i386-vars.fd OVMF_VARS_4M.fd OVMF_VARS.fd)
     DISK_DEVICE_ARGS=(-device "ahci,id=ahci0" -device "ide-hd,drive=disk0,bus=ahci0.0")
+    GLOBAL_ARGS=()
     ;;
 *)
     printf 'Unsupported target architecture: %s\n' "${ARCH}" >&2
@@ -64,7 +71,7 @@ DISK_IMAGE="${1:-${DISK_IMAGE:-gentoo-containeros-${ARCH}.raw}}"
 # vmnet-shared needs root (no com.apple.vm.networking entitlement on
 # the Homebrew qemu build); user networking does not
 if [ "${QEMU_NET}" = "vmnet-shared" ] && [ "$(id -u)" -ne 0 ]; then
-    exec sudo --preserve-env=ARCH,DISK_IMAGE,SERIAL_PIPE,QEMU_NET,QEMU_ACCEL,QEMU_MEM "$0" "$@"
+    exec sudo --preserve-env=ARCH,DISK_IMAGE,SERIAL_PIPE,QEMU_NET,QEMU_ACCEL,QEMU_MEM,QEMU_AUDIODEV "$0" "$@"
 fi
 
 if ! command -v "${QEMU_BIN}" >/dev/null 2>&1; then
@@ -137,10 +144,12 @@ elif [ -n "${QEMU_ACCEL}" ]; then
 fi
 
 if [ "${QEMU_NET}" = "vmnet-shared" ]; then
-    NET_ARGS=(-netdev "vmnet-shared,id=net0" -device "virtio-net-pci,netdev=net0")
+    NET_ARGS=(-netdev "vmnet-shared,id=net0" -device "virtio-net-pci,netdev=net0,romfile=")
 else
     NET_ARGS=(-nic "user,model=virtio-net-pci")
 fi
+
+AUDIO_ARGS=(-audiodev "${QEMU_AUDIODEV},id=audio0" -device "virtio-sound-pci,audiodev=audio0,romfile=")
 
 if [ -n "${SERIAL_PIPE}" ]; then
     SERIAL_ARGS=(-serial pipe:"${SERIAL_PIPE}" -display none)
@@ -155,6 +164,7 @@ printf 'Disk image:    %s\n' "${DISK_IMAGE}"
 printf 'Firmware code: %s\n' "${FIRMWARE_CODE}"
 printf 'Firmware vars: %s\n' "${FIRMWARE_VARS_SRC}"
 printf 'Networking:    %s\n' "${QEMU_NET}"
+printf 'Audio:         %s\n' "${QEMU_AUDIODEV}"
 printf '\n'
 
 exec "${QEMU_BIN}" \
@@ -162,8 +172,10 @@ exec "${QEMU_BIN}" \
     -machine "${QEMU_MACHINE_ARG}" \
     -cpu "${QEMU_CPU}" \
     -no-reboot \
+    "${GLOBAL_ARGS[@]}" \
     "${SERIAL_ARGS[@]}" \
     "${NET_ARGS[@]}" \
+    "${AUDIO_ARGS[@]}" \
     -drive if=pflash,format=raw,readonly=on,file="${FIRMWARE_CODE}" \
     -drive if=pflash,format=raw,file="${FIRMWARE_VARS}" \
     -drive if=none,format=raw,file="${DISK_IMAGE}",id=disk0 \
