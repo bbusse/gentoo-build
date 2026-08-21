@@ -30,6 +30,10 @@ main() {
                @net
         ;;
     sway)
+        # Real hardware (pine64/x230), unlike sway-virt: build mesa
+        # with the Lima Gallium driver for Mali GPU acceleration
+        cp /etc/portage/package.use.hwaccel /etc/portage/package.use/
+
          emerge -qv \
              --jobs "${emerge_jobs}" \
              --load-average "${emerge_load}" \
