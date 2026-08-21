@@ -44,6 +44,21 @@ main() {
                @virt \
                @net
         ;;
+    sway-virt)
+         emerge -qv \
+             --jobs "${emerge_jobs}" \
+             --load-average "${emerge_load}" \
+               --buildpkg \
+               --buildpkg-exclude \
+               "virtual/* \
+               sys-kernel/*-sources" \
+               @dev \
+               @dev-lang \
+               @sway-virt \
+               @essentials \
+               @virt \
+               @net
+        ;;
     k3s)
          emerge -qv \
              --jobs "${emerge_jobs}" \
