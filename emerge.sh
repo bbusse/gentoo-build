@@ -30,9 +30,23 @@ main() {
                @net
         ;;
     sway)
-        # Real hardware (pine64/x230), unlike sway-virt: build mesa
-        # with the Lima Gallium driver for Mali GPU acceleration
-        cp /etc/portage/package.use.hwaccel /etc/portage/package.use/
+        # Real hardware, unlike sway-virt: build mesa with the Gallium
+        # driver each supported SoC needs. One rootfs serves every board of
+        # an arch (gentoo-sway-pine64 reuses this rootfs and only swaps the
+        # kernel), so the arm64 file carries lima and panfrost together
+        # while amd64 gets the Intel driver
+        case "$(uname -m)" in
+        aarch64 | arm64)
+            cp /etc/portage/package.use.hwaccel /etc/portage/package.use/
+            ;;
+        x86_64 | amd64)
+            cp /etc/portage/package.use.hwaccel-amd64 /etc/portage/package.use/
+            ;;
+        *)
+            printf 'No hwaccel USE flags for %s, mesa will be swrast-only\n' \
+                "$(uname -m)" >&2
+            ;;
+        esac
 
          emerge -qv \
              --jobs "${emerge_jobs}" \
@@ -49,6 +63,11 @@ main() {
                @net
         ;;
     sway-virt)
+        # Guest under qemu with virglrenderer: build mesa with the virgl
+        # Gallium driver and wlroots with session support, so sway can open
+        # the virtio-gpu DRM device and render through the host GPU
+        cp /etc/portage/package.use.virgl /etc/portage/package.use/
+
          emerge -qv \
              --jobs "${emerge_jobs}" \
              --load-average "${emerge_load}" \
