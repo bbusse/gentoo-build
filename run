@@ -30,7 +30,7 @@
 #                macOS and gtk elsewhere; image-builder hardcodes gtk, which
 #                is not available on a mac. Ignored when QEMU_GPU=none.
 #   QEMU_GL      es|core|on. GL flavour appended to the display. Defaults to
-#                es, which is what ANGLE advertises on macOS.
+#                es, which is what ANGLE advertises on macOS
 
 set -eo pipefail
 
@@ -170,7 +170,7 @@ fi
 
 # "user" needs a qemu built with libslirp, which the virgl-capable builds
 # often are not; allow turning the NIC off rather than failing with
-# "network backend 'user' is not compiled into this binary".
+# "network backend 'user' is not compiled into this binary"
 case "${QEMU_NET}" in
 vmnet-shared)
     NET_ARGS=(-netdev "vmnet-shared,id=net0" -device "virtio-net-pci,netdev=net0,romfile=")
@@ -189,7 +189,7 @@ AUDIO_ARGS=(-audiodev "${QEMU_AUDIODEV},id=audio0" -device "virtio-sound-pci,aud
 # ROMs, and without it the PCI device fails to initialise with
 # "failed to find romfile efi-virtio.rom". The input devices come with the
 # GPU because a guest with a display and no keyboard or pointer is not much
-# use - CONFIG_VIRTIO_INPUT in the guest kernel backs them.
+# use - CONFIG_VIRTIO_INPUT in the guest kernel backs them
 case "${QEMU_GPU}" in
 none)
     GPU_ARGS=()
@@ -219,7 +219,7 @@ esac
 
 # SERIAL_PIPE is how tests/test_boot_qemu.sh drives the guest, so the console
 # stays on the pipe. Without a GPU keep forcing -display none, which is what
-# that test expects; with one, the window is the whole point.
+# that test expects; with one, the window is the whole point
 if [ -n "${SERIAL_PIPE}" ]; then
     SERIAL_ARGS=(-serial pipe:"${SERIAL_PIPE}")
     if [ "${QEMU_GPU}" = none ]; then
