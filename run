@@ -10,13 +10,27 @@
 #   DISK_IMAGE   Disk image to boot. Defaults to gentoo-containeros-<ARCH>.raw
 #   SERIAL_PIPE  Base path of a mkfifo pair (<base>.in/<base>.out). When set,
 #                the guest console is wired to it instead of the terminal.
-#   QEMU_NET     user|vmnet-shared. Defaults to vmnet-shared on macOS
-#                (needs root) and user everywhere else.
+#   QEMU_NET     user|vmnet-shared|none. Defaults to vmnet-shared on macOS
+#                (needs root) and user everywhere else. Use none when qemu was
+#                built without libslirp.
 #   QEMU_ACCEL   Accelerator to request when guest arch matches the host.
 #   QEMU_MEM     Guest memory in MB. Defaults to 2048.
 #   QEMU_AUDIODEV Audio backend for virtio-sound (coreaudio|alsa|pa|none|...).
 #                Defaults to coreaudio on macOS, none (silent, no host audio
 #                dependency) everywhere else.
+#   QEMU_GPU     none|virgl|std. Defaults to none, which keeps the serial-only
+#                behaviour the boot tests rely on. Mirrors image-builder's
+#                display_args: virtio-vga-gl on amd64, virtio-gpu-gl-pci on
+#                arm64 (image-builder still uses a plain virtio-gpu-pci there,
+#                so arm64 gets no GL under it), plus virtio input devices so a
+#                compositor in the guest has a keyboard and pointer. Needs a
+#                qemu built with opengl and virglrenderer - stock Homebrew
+#                qemu has neither.
+#   QEMU_DISPLAY Display backend (cocoa|gtk|sdl|...). Defaults to cocoa on
+#                macOS and gtk elsewhere; image-builder hardcodes gtk, which
+#                is not available on a mac. Ignored when QEMU_GPU=none.
+#   QEMU_GL      es|core|on. GL flavour appended to the display. Defaults to
+#                es, which is what ANGLE advertises on macOS.
 
 set -eo pipefail
 
@@ -41,6 +55,14 @@ else
     QEMU_AUDIODEV="${QEMU_AUDIODEV:-none}"
 fi
 
+QEMU_GPU="${QEMU_GPU:-none}"
+QEMU_GL="${QEMU_GL:-es}"
+if [ "${HOST_OS}" = "Darwin" ]; then
+    QEMU_DISPLAY="${QEMU_DISPLAY:-cocoa}"
+else
+    QEMU_DISPLAY="${QEMU_DISPLAY:-gtk}"
+fi
+
 case "${ARCH}" in
 arm64)
     QEMU_BIN="qemu-system-aarch64"
@@ -50,6 +72,8 @@ arm64)
     FIRMWARE_VARS_NAMES=(edk2-arm-vars.fd AAVMF_VARS.fd QEMU_VARS.fd)
     DISK_DEVICE_ARGS=(-device "virtio-blk-pci,drive=disk0,romfile=")
     GLOBAL_ARGS=(-global "virtio-pci.romfile=")
+    GPU_DEVICE_GL="virtio-gpu-gl-pci"
+    GPU_DEVICE_STD="virtio-gpu-pci"
     ;;
 amd64)
     QEMU_BIN="qemu-system-x86_64"
@@ -57,6 +81,8 @@ amd64)
     QEMU_CPU="qemu64"
     FIRMWARE_CODE_NAMES=(edk2-x86_64-code.fd OVMF_CODE_4M.fd OVMF_CODE.fd OVMF.fd)
     FIRMWARE_VARS_NAMES=(edk2-i386-vars.fd OVMF_VARS_4M.fd OVMF_VARS.fd)
+    GPU_DEVICE_GL="virtio-vga-gl"
+    GPU_DEVICE_STD="virtio-vga"
     DISK_DEVICE_ARGS=(-device "ahci,id=ahci0" -device "ide-hd,drive=disk0,bus=ahci0.0")
     GLOBAL_ARGS=()
     ;;
@@ -68,10 +94,9 @@ esac
 
 DISK_IMAGE="${1:-${DISK_IMAGE:-gentoo-containeros-${ARCH}.raw}}"
 
-# vmnet-shared needs root (no com.apple.vm.networking entitlement on
-# the Homebrew qemu build); user networking does not
+# vmnet-shared needs root
 if [ "${QEMU_NET}" = "vmnet-shared" ] && [ "$(id -u)" -ne 0 ]; then
-    exec sudo --preserve-env=ARCH,DISK_IMAGE,SERIAL_PIPE,QEMU_NET,QEMU_ACCEL,QEMU_MEM,QEMU_AUDIODEV "$0" "$@"
+    exec sudo --preserve-env=ARCH,DISK_IMAGE,SERIAL_PIPE,QEMU_NET,QEMU_ACCEL,QEMU_MEM,QEMU_AUDIODEV,QEMU_GPU,QEMU_DISPLAY,QEMU_GL "$0" "$@"
 fi
 
 if ! command -v "${QEMU_BIN}" >/dev/null 2>&1; then
@@ -143,18 +168,70 @@ elif [ -n "${QEMU_ACCEL}" ]; then
     QEMU_MACHINE_ARG="${QEMU_MACHINE},accel=${QEMU_ACCEL}"
 fi
 
-if [ "${QEMU_NET}" = "vmnet-shared" ]; then
+# "user" needs a qemu built with libslirp, which the virgl-capable builds
+# often are not; allow turning the NIC off rather than failing with
+# "network backend 'user' is not compiled into this binary".
+case "${QEMU_NET}" in
+vmnet-shared)
     NET_ARGS=(-netdev "vmnet-shared,id=net0" -device "virtio-net-pci,netdev=net0,romfile=")
-else
+    ;;
+none)
+    NET_ARGS=(-nic none)
+    ;;
+*)
     NET_ARGS=(-nic "user,model=virtio-net-pci")
-fi
+    ;;
+esac
 
 AUDIO_ARGS=(-audiodev "${QEMU_AUDIODEV},id=audio0" -device "virtio-sound-pci,audiodev=audio0,romfile=")
 
+# romfile= matches the other virtio devices here: these builds ship no option
+# ROMs, and without it the PCI device fails to initialise with
+# "failed to find romfile efi-virtio.rom". The input devices come with the
+# GPU because a guest with a display and no keyboard or pointer is not much
+# use - CONFIG_VIRTIO_INPUT in the guest kernel backs them.
+case "${QEMU_GPU}" in
+none)
+    GPU_ARGS=()
+    DISPLAY_ARG=""
+    ;;
+virgl)
+    GPU_ARGS=(
+        -device "${GPU_DEVICE_GL},romfile="
+        -device "virtio-keyboard-pci,romfile="
+        -device "virtio-tablet-pci,romfile="
+    )
+    DISPLAY_ARG="${QEMU_DISPLAY},gl=${QEMU_GL}"
+    ;;
+std)
+    GPU_ARGS=(
+        -device "${GPU_DEVICE_STD},romfile="
+        -device "virtio-keyboard-pci,romfile="
+        -device "virtio-tablet-pci,romfile="
+    )
+    DISPLAY_ARG="${QEMU_DISPLAY}"
+    ;;
+*)
+    printf 'Unsupported QEMU_GPU: %s (expected none|virgl|std)\n' "${QEMU_GPU}" >&2
+    exit 1
+    ;;
+esac
+
+# SERIAL_PIPE is how tests/test_boot_qemu.sh drives the guest, so the console
+# stays on the pipe. Without a GPU keep forcing -display none, which is what
+# that test expects; with one, the window is the whole point.
 if [ -n "${SERIAL_PIPE}" ]; then
-    SERIAL_ARGS=(-serial pipe:"${SERIAL_PIPE}" -display none)
-else
+    SERIAL_ARGS=(-serial pipe:"${SERIAL_PIPE}")
+    if [ "${QEMU_GPU}" = none ]; then
+        SERIAL_ARGS+=(-display none)
+    else
+        SERIAL_ARGS+=(-display "${DISPLAY_ARG}")
+    fi
+elif [ "${QEMU_GPU}" = none ]; then
     SERIAL_ARGS=(-nographic)
+else
+    # Keep the console in the terminal while the guest window is open
+    SERIAL_ARGS=(-serial mon:stdio -display "${DISPLAY_ARG}")
 fi
 
 printf 'Host:          %s/%s\n' "${HOST_OS}" "${HOST_ARCH}"
@@ -165,6 +242,10 @@ printf 'Firmware code: %s\n' "${FIRMWARE_CODE}"
 printf 'Firmware vars: %s\n' "${FIRMWARE_VARS_SRC}"
 printf 'Networking:    %s\n' "${QEMU_NET}"
 printf 'Audio:         %s\n' "${QEMU_AUDIODEV}"
+printf 'GPU:           %s\n' "${QEMU_GPU}"
+if [ "${QEMU_GPU}" != none ]; then
+    printf 'Display:       %s\n' "${DISPLAY_ARG}"
+fi
 printf '\n'
 
 exec "${QEMU_BIN}" \
@@ -176,6 +257,7 @@ exec "${QEMU_BIN}" \
     "${SERIAL_ARGS[@]}" \
     "${NET_ARGS[@]}" \
     "${AUDIO_ARGS[@]}" \
+    "${GPU_ARGS[@]}" \
     -drive if=pflash,format=raw,readonly=on,file="${FIRMWARE_CODE}" \
     -drive if=pflash,format=raw,file="${FIRMWARE_VARS}" \
     -drive if=none,format=raw,file="${DISK_IMAGE}",id=disk0 \

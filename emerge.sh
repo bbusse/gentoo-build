@@ -63,11 +63,6 @@ main() {
                @net
         ;;
     sway-virt)
-        # Guest under qemu with virglrenderer: build mesa with the virgl
-        # Gallium driver and wlroots with session support, so sway can open
-        # the virtio-gpu DRM device and render through the host GPU
-        cp /etc/portage/package.use.virgl /etc/portage/package.use/
-
          emerge -qv \
              --jobs "${emerge_jobs}" \
              --load-average "${emerge_load}" \
