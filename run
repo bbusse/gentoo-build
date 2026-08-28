@@ -249,10 +249,21 @@ else
         seek="$(file_size "${FIRMWARE_CODE}")" 2>/dev/null
 fi
 
+# Emulating a foreign arch means tcg; a matching arch should use the host
+# hypervisor, which is the difference between a guest that builds packages at
+# native speed and one that takes hours. Leaving accel unset falls back to
+# qemu's default of tcg even when hvf or kvm is available, so pick explicitly
 QEMU_MACHINE_ARG="${QEMU_MACHINE}"
 if [ "${ARCH}" != "${HOST_ARCH}" ]; then
     QEMU_MACHINE_ARG="${QEMU_MACHINE},accel=tcg"
-elif [ -n "${QEMU_ACCEL}" ]; then
+else
+    if [ -z "${QEMU_ACCEL}" ]; then
+        if [ "${HOST_OS}" = "Darwin" ]; then
+            QEMU_ACCEL="hvf"
+        else
+            QEMU_ACCEL="kvm"
+        fi
+    fi
     QEMU_MACHINE_ARG="${QEMU_MACHINE},accel=${QEMU_ACCEL}"
 fi
 
