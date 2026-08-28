@@ -4,6 +4,13 @@
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # Usage: ./run [path-to-disk.raw]
+#        ./run download [target] [arch]
+#
+# download fetches the newest disk image artifact from the Create Disk Image
+# workflow and unpacks it sparsely. A plain unzip writes all 16 GiB including
+# every zero block, which fills a disk and leaves a truncated image whose
+# rootfs partition runs past EOF - the guest then boots far enough to read the
+# partition table and fails to find its root
 #
 # Environment:
 #   ARCH         Target arch to boot (amd64|arm64). Defaults to the host arch.
@@ -29,6 +36,8 @@
 #   QEMU_DISPLAY Display backend (cocoa|gtk|sdl|...). Defaults to cocoa on
 #                macOS and gtk elsewhere; image-builder hardcodes gtk, which
 #                is not available on a mac. Ignored when QEMU_GPU=none.
+#   DOWNLOAD_REPO owner/repo the download subcommand pulls artifacts from.
+#                Defaults to bbusse/gentoo-build
 #   QEMU_GL      es|core|on. GL flavour appended to the display. Defaults to
 #                es, which is what ANGLE advertises on macOS
 
@@ -55,7 +64,16 @@ else
     QEMU_AUDIODEV="${QEMU_AUDIODEV:-none}"
 fi
 
-QEMU_GPU="${QEMU_GPU:-none}"
+# Default to a GPU for interactive runs and to none under SERIAL_PIPE, which
+# only tests/test_boot_qemu.sh sets: a boot test wants the console on the pipe
+# and no window, while running ./run by hand almost always means wanting to
+# see the guest
+if [ -n "${SERIAL_PIPE}" ]; then
+    QEMU_GPU="${QEMU_GPU:-none}"
+else
+    QEMU_GPU="${QEMU_GPU:-virgl}"
+fi
+DOWNLOAD_REPO="${DOWNLOAD_REPO:-bbusse/gentoo-build}"
 QEMU_GL="${QEMU_GL:-es}"
 if [ "${HOST_OS}" = "Darwin" ]; then
     QEMU_DISPLAY="${QEMU_DISPLAY:-cocoa}"
@@ -91,6 +109,76 @@ amd64)
     exit 1
     ;;
 esac
+
+download_image() {
+    local target
+    target="${1:-gentoo-sway-virt}"
+    local arch
+    arch="${2:-${ARCH}}"
+    local artifact
+    artifact="disk-image-${target}-${arch}"
+    local raw
+    raw="${target}-${arch}.raw"
+
+    for tool in gh python3; do
+        if ! command -v "${tool}" >/dev/null 2>&1; then
+            printf '%s is required for download\n' "${tool}" >&2
+            exit 1
+        fi
+    done
+
+    printf 'Looking for %s\n' "${artifact}"
+    local id
+    if ! id="$(gh api "/repos/${DOWNLOAD_REPO}/actions/artifacts?per_page=100" \
+            --jq "[.artifacts[] | select(.name == \"${artifact}\") |
+                   select(.expired == false)] | first | .id" 2>&1)"; then
+        printf 'Artifact lookup failed for %s: %s\n' "${DOWNLOAD_REPO}" "${id}" >&2
+        exit 1
+    fi
+    if [ -z "${id}" ] || [ "${id}" = "null" ]; then
+        printf 'No unexpired artifact named %s in %s\n' \
+               "${artifact}" "${DOWNLOAD_REPO}" >&2
+        exit 1
+    fi
+
+    printf 'Downloading artifact %s\n' "${id}"
+    gh api "/repos/${DOWNLOAD_REPO}/actions/artifacts/${id}/zip" > "${raw}.zip"
+
+    printf 'Unpacking %s sparsely\n' "${raw}"
+    python3 - "${raw}.zip" "${raw}" <<'PYEOF'
+import os, sys, zipfile
+
+zip_path, out = sys.argv[1], sys.argv[2]
+CHUNK = 1 << 20
+zeros = b"\0" * CHUNK
+with zipfile.ZipFile(zip_path) as z:
+    name = next(n for n in z.namelist() if n.endswith(".raw"))
+    total = z.getinfo(name).file_size
+    written = 0
+    with z.open(name) as src, open(out, "wb") as dst:
+        while True:
+            buf = src.read(CHUNK)
+            if not buf:
+                break
+            if len(buf) == CHUNK and buf == zeros:
+                dst.seek(CHUNK, os.SEEK_CUR)
+            else:
+                dst.write(buf)
+                written += len(buf)
+        dst.truncate(total)
+print(f"{name}: {total / 2**30:.1f} GiB logical, "
+      f"{written / 2**30:.2f} GiB written")
+PYEOF
+
+    rm -f "${raw}.zip"
+    printf 'Wrote %s\n' "${raw}"
+}
+
+if [ "${1:-}" = "download" ]; then
+    shift
+    download_image "$@"
+    exit 0
+fi
 
 DISK_IMAGE="${1:-${DISK_IMAGE:-gentoo-containeros-${ARCH}.raw}}"
 
