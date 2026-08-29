@@ -1,0 +1,177 @@
+name: Gentoo
+
+# The whole pipeline in one workflow: stage4 tarballs -> released artifacts ->
+# disk images -> qemu boot test. It is one file because each stage consumes the
+# previous stage's output, and real `needs:` edges express that. As separate
+# workflows they could only poll each other's check runs, which cost a job per
+# workflow and burned GITHUB_TOKEN quota for hours while a stage4 built.
+#
+# The target table below is the single source of truth. It used to be spelled
+# out in four matrices across three files that had to be edited in lockstep -
+# miss one and the disk image job 404s on a release asset nobody built.
+
+on:
+  push:
+    paths-ignore:
+      - '**.md'
+    branches:
+      - '**'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+    branches:
+      - '**'
+  workflow_dispatch:
+    inputs:
+      stages:
+        description: Which part of the pipeline to run
+        type: choice
+        default: all
+        options:
+          - all
+          - stage4-only
+          - images-only
+
+jobs:
+  targets:
+    name: Resolve targets
+    runs-on: ubuntu-latest
+    outputs:
+      stage4: ${{ steps.t.outputs.stage4 }}
+      images: ${{ steps.t.outputs.images }}
+      boot: ${{ steps.t.outputs.boot }}
+    steps:
+      - name: Build the matrices
+        id: t
+        run: |
+          set -euo pipefail
+
+          # flavour | arch | portage overlays | disk-image target | boot-test?
+          # An empty overlays field means everything the sets need is in the
+          # main tree; the rest pull from bbusse-overlay.
+          rows="$(cat <<'EOF'
+          containeros|amd64||gentoo-containeros|yes
+          sway-virt|amd64|https://github.com/bbusse/bbusse-overlay|gentoo-sway-virt|yes
+          containeros|arm64||gentoo-containeros|yes
+          sway|arm64|https://github.com/bbusse/bbusse-overlay|gentoo-sway|yes
+          sway-virt|arm64|https://github.com/bbusse/bbusse-overlay|gentoo-sway-virt|yes
+          k3s|arm64|https://github.com/bbusse/bbusse-overlay|gentoo-k3s|yes
+          EOF
+          )"
+
+          # Disk images that reuse another flavour's stage4 rather than having
+          # one of their own. Both board variants take sway/arm64's rootfs and
+          # differ only in the kernel: that rootfs carries lima and panfrost
+          # together, so it serves both. pine64 additionally gets a partition
+          # layout that leaves the Allwinner U-Boot SPL offset clear, which the
+          # RK3399 does not need. Both are real hardware, so qemu's virt
+          # machine cannot boot them and neither gets a boot test.
+          # target | arch | boot-test?
+          extra="$(cat <<'EOF'
+          gentoo-sway-pine64|arm64|no
+          gentoo-sway-rockpro64|arm64|no
+          EOF
+          )"
+
+          split='split("\n") | map(select(length > 0) | split("|"))'
+          rows_json="$(printf '%s\n' "$rows"  | sed 's/^ *//' | jq -Rsc "$split")"
+          extra_json="$(printf '%s\n' "$extra" | sed 's/^ *//' | jq -Rsc "$split")"
+
+          {
+            printf 'stage4=%s\n' "$(jq -cn --argjson r "$rows_json" \
+              '{include: ($r | map({flavour: .[0], arch: .[1], overlays: .[2]}))}')"
+            printf 'images=%s\n' "$(jq -cn --argjson r "$rows_json" --argjson e "$extra_json" \
+              '{include: (($r | map({target: .[3], arch: .[1]}))
+                         + ($e | map({target: .[0], arch: .[1]})))}')"
+            printf 'boot=%s\n' "$(jq -cn --argjson r "$rows_json" --argjson e "$extra_json" \
+              '{include: (($r | map(select(.[4] == "yes") | {target: .[3], arch: .[1]}))
+                        + ($e | map(select(.[2] == "yes") | {target: .[0], arch: .[1]})))}')"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "stage4 builds:"; jq -r '.include[] | "  \(.flavour) (\(.arch))"' \
+            <<< "$(jq -cn --argjson r "$rows_json" '{include: ($r | map({flavour: .[0], arch: .[1]}))}')"
+
+  stage4:
+    name: Build ${{ matrix.flavour }} (${{ matrix.arch }})
+    needs: targets
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.stages != 'images-only' }}
+    strategy:
+      # A stage4 build runs for hours; one flavour failing must not cancel
+      # siblings that are nearly done.
+      fail-fast: false
+      matrix: ${{ fromJson(needs.targets.outputs.stage4) }}
+    uses: bbusse/github-workflows/.github/workflows/build-gentoo-stage4.yml@dev
+    with:
+      arch: ${{ matrix.arch }}
+      # Derived, so a new arm64 entry cannot forget it and silently
+      # cross-build under emulation.
+      use_arm_runner: ${{ matrix.arch == 'arm64' }}
+      flavour: ${{ matrix.flavour }}
+      overlays: ${{ matrix.overlays }}
+      image_name: gentoo-stage4
+      registry: ghcr.io/bbusse
+      tag: latest
+    secrets:
+      GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  extract:
+    name: Extract ${{ matrix.flavour }} (${{ matrix.arch }})
+    needs: [targets, stage4]
+    if: ${{ needs.stage4.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.targets.outputs.stage4) }}
+    uses: bbusse/github-workflows/.github/workflows/container-extract-artifacts.yml@dev
+    with:
+      image: ghcr.io/bbusse/gentoo-stage4-${{ matrix.flavour }}-${{ matrix.arch }}:latest
+      release: true
+      release_tag: latest
+      artifacts: |
+        [
+          {"path": "gentoo-stage4-${{ matrix.flavour }}-${{ matrix.arch }}.tar.xz",
+           "name": "gentoo-stage4-${{ matrix.flavour }}-${{ matrix.arch }}.tar.xz",
+           "platform": "linux/${{ matrix.arch }}"},
+          {"path": "gentoo-stage4-${{ matrix.flavour }}-${{ matrix.arch }}.tar.xz.sha384",
+           "name": "gentoo-stage4-${{ matrix.flavour }}-${{ matrix.arch }}.tar.xz.sha384",
+           "platform": "linux/${{ matrix.arch }}"}
+        ]
+    secrets:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  disk-image:
+    name: Create disk image (${{ matrix.target }}, ${{ matrix.arch }})
+    needs: [targets, extract]
+    # Runs after a successful extract, or straight away when a dispatch asked
+    # for images only - in which case the stage4 tarballs already on the
+    # "latest" release are what get used.
+    if: >-
+      ${{ !cancelled()
+      && needs.targets.result == 'success'
+      && (needs.extract.result == 'success' || needs.extract.result == 'skipped')
+      && (github.event_name != 'workflow_dispatch' || inputs.stages != 'stage4-only') }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.targets.outputs.images) }}
+    uses: bbusse/github-workflows/.github/workflows/create-disk-image.yml@dev
+    with:
+      target: ${{ matrix.target }}
+      arch: ${{ matrix.arch }}
+      use_arm_runner: ${{ matrix.arch == 'arm64' }}
+      verify_fs: true
+      verify_fs_stages: true
+      font_urls: https://wiki.c-base.org/dokuwiki/_media/ceva-c2.ttf
+
+  test-boot:
+    name: Boot disk image under qemu (${{ matrix.target }}, ${{ matrix.arch }})
+    needs: [targets, disk-image]
+    if: ${{ needs.disk-image.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.targets.outputs.boot) }}
+    uses: bbusse/github-workflows/.github/workflows/run-tests-bash-unit.yml@dev
+    with:
+      test_files: tests/test_boot_qemu.sh
+      install_qemu_deps: true
+      test_arch: ${{ matrix.arch }}
+      use_arm_runner: ${{ matrix.arch == 'arm64' }}
+      download_artifact_name: disk-image-${{ matrix.target }}-${{ matrix.arch }}

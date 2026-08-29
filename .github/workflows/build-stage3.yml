@@ -1,0 +1,130 @@
+---
+# SPDX-FileCopyrightText: Björn Busse <bj.rn@baerlin.eu>
+# SPDX-License-Identifier: BSD-3-Clause
+
+name: Build Stage3
+
+# Builds a stage3 with Catalyst, seeded from a stage1 or from the current
+# official stage3. Distinct from Containerfile-stage3, which only repackages
+# an official stage3 tarball as a container image.
+
+on:
+  workflow_dispatch:
+    inputs:
+      stage1_url:
+        description: >-
+          URL of a Gentoo stage1 tarball to seed the build. When omitted,
+          Containerfile-catalyst downloads the current official stage3 for
+          this arch from Gentoo mirrors. Only usable for a single-arch build.
+        required: false
+        default: ''
+      profile:
+        description: >-
+          Portage profile for the stage3. Empty derives
+          default/linux/<subarch>/23.0, which on amd64 is multilib; append
+          /no-multilib to drop the 32-bit toolchain and libraries.
+        required: false
+        default: ''
+      slim:
+        description: >-
+          Set to 1 to build @system with */* -doc -nls, dropping package
+          documentation and gettext translations from the stage3.
+        required: false
+        default: '0'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # Named without a "Build " prefix for the same reason as the catalyst job -
+  # see build-catalyst.yml.
+  stage3:
+    name: Stage3 (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 350
+    env:
+      IMAGE: ghcr.io/bbusse/gentoo-stage3-${{ matrix.arch }}:latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Free up disk for the @system build
+        uses: bbusse/github-workflows/.github/actions/aggressive-cleanup@dev
+
+      - name: Log in to ghcr
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+        run: |
+          set -eu
+          printf '%s' "$GHCR_TOKEN" | sudo podman login ghcr.io -u "$GHCR_USER" --password-stdin
+
+      - name: Fetch seed tarball
+        if: ${{ inputs.stage1_url != '' }}
+        env:
+          STAGE1_URL: ${{ inputs.stage1_url }}
+        run: curl -fsSL -o seed.tar.xz "$STAGE1_URL"
+
+      - name: Build stage3
+        env:
+          SUBARCH: ${{ matrix.arch }}
+          CATALYST_IMAGE: ghcr.io/bbusse/gentoo-catalyst-${{ matrix.arch }}:latest
+          PROFILE: ${{ inputs.profile }}
+          SLIM: ${{ inputs.slim }}
+        run: |
+          set -eu
+          args=""
+          if [ -f seed.tar.xz ]; then
+            args="--build-arg STAGE1=seed.tar.xz"
+          fi
+          # shellcheck disable=SC2086 # $args is deliberately word-split
+          sudo podman build \
+            --cap-add SYS_ADMIN --cap-add SYS_CHROOT --cap-add MKNOD \
+            --build-arg CATALYST_IMAGE="$CATALYST_IMAGE" \
+            --build-arg SUBARCH="$SUBARCH" \
+            --build-arg JOBS="$(nproc)" \
+            --build-arg PROFILE="$PROFILE" \
+            --build-arg SLIM="$SLIM" \
+            $args \
+            -f Containerfile-catalyst-stage3 \
+            -t "$IMAGE" .
+
+      - name: Push stage3 image
+        run: sudo podman push "$IMAGE"
+
+  extract-stage3:
+    name: Extract stage3 (${{ matrix.arch }})
+    needs: stage3
+    # needs: gates on the whole build matrix, so without this one arch failing
+    # would strand the other arch's extract. Each leg stands or falls on
+    # whether its own image was pushed.
+    if: ${{ !cancelled() }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    permissions:
+      contents: write
+      packages: read
+    uses: bbusse/github-workflows/.github/workflows/container-extract-artifacts.yml@dev
+    with:
+      image: ghcr.io/bbusse/gentoo-stage3-${{ matrix.arch }}:latest
+      use_arm_runner: ${{ matrix.arch == 'arm64' }}
+      release: true
+      release_tag: latest
+      artifacts: |
+        [
+          {"path": "stage3.tar.xz",
+           "name": "stage3-${{ matrix.arch }}.tar.xz",
+           "platform": "linux/${{ matrix.arch }}"}
+        ]
+    secrets:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

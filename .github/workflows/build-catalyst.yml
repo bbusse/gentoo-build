@@ -1,0 +1,79 @@
+---
+# SPDX-FileCopyrightText: Björn Busse <bj.rn@baerlin.eu>
+# SPDX-License-Identifier: BSD-3-Clause
+
+name: Build Catalyst Container
+
+# Unconditional: the stage3 build is dispatch-only and consumes this image
+# from ghcr.io, so it has to be present and current there.
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - '**'
+  workflow_dispatch:
+    inputs:
+      snapshot_date:
+        description: >-
+          Portage snapshot to sync, as yyyymmdd. When omitted the current
+          snapshot is fetched, so the same recipe can yield a different
+          image on a different day.
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # Deliberately not container-build-push.yml: its build_args are a static
+  # string, so JOBS cannot be $(nproc), and it exposes no job timeout.
+  # Catalyst emerges perl, util-linux and Catalyst itself from source, so both
+  # matter here.
+  #
+  # The job name deliberately avoids a "Build " prefix: the stage4 pipeline's
+  # gates wait on check runs matching '^Build ' / '^(Build|Extract) ', and a
+  # catalyst build that can run for two hours must not hold those up.
+  catalyst:
+    name: Catalyst (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    env:
+      IMAGE: ghcr.io/bbusse/gentoo-catalyst-${{ matrix.arch }}:latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Log in to ghcr
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+        run: |
+          set -eu
+          printf '%s' "$GHCR_TOKEN" | podman login ghcr.io -u "$GHCR_USER" --password-stdin
+
+      - name: Build catalyst
+        env:
+          SUBARCH: ${{ matrix.arch }}
+          SNAPSHOT_DATE: ${{ inputs.snapshot_date }}
+        run: |
+          set -eu
+          podman build \
+            --build-arg SUBARCH="$SUBARCH" \
+            --build-arg JOBS="$(nproc)" \
+            --build-arg SNAPSHOT_DATE="$SNAPSHOT_DATE" \
+            -f Containerfile-catalyst \
+            -t "$IMAGE" .
+
+      - name: Push
+        if: ${{ github.event_name != 'pull_request' }}
+        run: podman push "$IMAGE"
