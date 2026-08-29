@@ -16,11 +16,18 @@ main() {
 
     printf "Building gentoo flavour: %s\n" "${target_flavour}"
 
+    # --newuse --update reconciles USE differences against what the stage3
+    # already has installed instead of erroring out on a slot conflict. rust
+    # wants net-misc/curl[http2] while the stage3 ships curl without it, which
+    # otherwise stops the sway flavours dead. image-builder's chroot merge
+    # carries the same flags for the same reason
+
     case "${target_flavour}" in
     containeros)
          emerge -qv \
              --jobs "${emerge_jobs}" \
              --load-average "${emerge_load}" \
+             --newuse --update \
                --buildpkg \
                --buildpkg-exclude \
                "virtual/* \
@@ -51,6 +58,7 @@ main() {
          emerge -qv \
              --jobs "${emerge_jobs}" \
              --load-average "${emerge_load}" \
+             --newuse --update \
                --buildpkg \
                --buildpkg-exclude \
                "virtual/* \
@@ -66,6 +74,7 @@ main() {
          emerge -qv \
              --jobs "${emerge_jobs}" \
              --load-average "${emerge_load}" \
+             --newuse --update \
                --buildpkg \
                --buildpkg-exclude \
                "virtual/* \
@@ -81,6 +90,7 @@ main() {
          emerge -qv \
              --jobs "${emerge_jobs}" \
              --load-average "${emerge_load}" \
+             --newuse --update \
                --buildpkg \
                --buildpkg-exclude \
                "virtual/* \
