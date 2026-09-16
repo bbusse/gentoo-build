@@ -3,8 +3,13 @@
 # SPDX-FileCopyrightText: Björn Busse <bj.rn@baerlin.eu>
 # SPDX-License-Identifier: BSD-3-Clause
 #
-# Usage: ./run [path-to-disk.raw]
+# Usage: ./run [path-to-disk.raw|host-device]
 #        ./run download [target] [arch]
+#
+# path-to-disk.raw can also be a host device, e.g. /dev/disk4 on macOS, to
+# boot that physical disk directly instead of an image file. See run-disk for
+# a wrapper that confirms before doing so - writes from the guest land
+# straight on the real disk.
 #
 # download fetches the newest disk image artifact from the Create Disk Image
 # workflow and unpacks it sparsely. A plain unzip writes all 16 GiB including
@@ -40,6 +45,32 @@
 #                Defaults to bbusse/gentoo-build
 #   QEMU_GL      es|core|on. GL flavour appended to the display. Defaults to
 #                es, which is what ANGLE advertises on macOS
+#   VM_MOUNTS    Host directories to share with the guest over 9p, as
+#                <host>:<guest> pairs separated by "|", e.g.
+#                  /usr/local/src:/usr/local/src|~/tmp:~/tmp
+#                A leading ~ is expanded against HOME on the host side; on
+#                the guest side it stays literal and resolves against root's
+#                home there. The guest path travels across as the 9p mount
+#                tag, which caps it at 31 bytes, and images carrying the
+#                9p-automount unit mount each share at that path on boot
+#   VM_MOUNT_SECURITY  9p security_model for every share. Defaults to
+#                mapped-xattr, which stores guest ownership in host xattrs
+#                instead of needing root. Use none or passthrough to see the
+#                host's own uid/gid in the guest
+#   VM_DISK      Host block device or raw image to attach to the guest as a
+#                second drive, e.g. /dev/disk4 on macOS. Unmount the disk
+#                first (diskutil unmountDisk /dev/disk4) or qemu fails to
+#                open it. On macOS a disk has two device nodes: /dev/diskN is
+#                the buffered block device, /dev/rdiskN the raw, unbuffered
+#                one. rdisk is usually faster but demands sector-aligned I/O
+#                end to end; some USB/SD adapters only handle that cleanly
+#                through the buffered node and throw I/O errors under rdisk.
+#                Pass whichever node works for the given device - this script
+#                does not rewrite one to the other. Guest write errors that
+#                cluster at one offset and beyond, on either node, usually
+#                mean the drive itself is bad or reports a fake capacity
+#                larger than its real NAND (common on cheap USB/SD media) -
+#                verify with f3write/f3read (or h2testw) before trusting one
 
 set -eo pipefail
 
@@ -75,6 +106,7 @@ else
 fi
 DOWNLOAD_REPO="${DOWNLOAD_REPO:-bbusse/gentoo-build}"
 QEMU_GL="${QEMU_GL:-es}"
+VM_MOUNT_SECURITY="${VM_MOUNT_SECURITY:-mapped-xattr}"
 if [ "${HOST_OS}" = "Darwin" ]; then
     QEMU_DISPLAY="${QEMU_DISPLAY:-cocoa}"
 else
@@ -89,6 +121,7 @@ arm64)
     FIRMWARE_CODE_NAMES=(edk2-aarch64-code.fd AAVMF_CODE.fd QEMU_EFI.fd)
     FIRMWARE_VARS_NAMES=(edk2-arm-vars.fd AAVMF_VARS.fd QEMU_VARS.fd)
     DISK_DEVICE_ARGS=(-device "virtio-blk-pci,drive=disk0,romfile=")
+    EXTRA_DISK_DEVICE_ARGS=(-device "virtio-blk-pci,drive=disk1,romfile=")
     GLOBAL_ARGS=(-global "virtio-pci.romfile=")
     GPU_DEVICE_GL="virtio-gpu-gl-pci"
     GPU_DEVICE_STD="virtio-gpu-pci"
@@ -102,6 +135,7 @@ amd64)
     GPU_DEVICE_GL="virtio-vga-gl"
     GPU_DEVICE_STD="virtio-vga"
     DISK_DEVICE_ARGS=(-device "ahci,id=ahci0" -device "ide-hd,drive=disk0,bus=ahci0.0")
+    EXTRA_DISK_DEVICE_ARGS=(-device "ide-hd,drive=disk1,bus=ahci0.1")
     GLOBAL_ARGS=()
     ;;
 *)
@@ -184,7 +218,7 @@ DISK_IMAGE="${1:-${DISK_IMAGE:-gentoo-containeros-${ARCH}.raw}}"
 
 # vmnet-shared needs root
 if [ "${QEMU_NET}" = "vmnet-shared" ] && [ "$(id -u)" -ne 0 ]; then
-    exec sudo --preserve-env=ARCH,DISK_IMAGE,SERIAL_PIPE,QEMU_NET,QEMU_ACCEL,QEMU_MEM,QEMU_AUDIODEV,QEMU_GPU,QEMU_DISPLAY,QEMU_GL "$0" "$@"
+    exec sudo --preserve-env=ARCH,DISK_IMAGE,SERIAL_PIPE,QEMU_NET,QEMU_ACCEL,QEMU_MEM,QEMU_AUDIODEV,QEMU_GPU,QEMU_DISPLAY,QEMU_GL,VM_MOUNTS,VM_MOUNT_SECURITY,VM_DISK "$0" "$@"
 fi
 
 if ! command -v "${QEMU_BIN}" >/dev/null 2>&1; then
@@ -226,8 +260,15 @@ file_size() {
     stat -f%z "$1" 2>/dev/null || stat -c%s "$1"
 }
 
-if [ ! -f "${DISK_IMAGE}" ]; then
+# -e rather than -f: a physical disk given directly (e.g. /dev/disk4 or
+# /dev/rdisk4) is a device node, not a regular file
+if [ ! -e "${DISK_IMAGE}" ]; then
     printf 'Disk image not found: %s\n' "${DISK_IMAGE}" >&2
+    exit 1
+fi
+
+if [ -n "${VM_DISK}" ] && [ ! -e "${VM_DISK}" ]; then
+    printf 'VM_DISK not found: %s\n' "${VM_DISK}" >&2
     exit 1
 fi
 
@@ -316,6 +357,95 @@ std)
     ;;
 esac
 
+# VM_MOUNTS shares host directories over 9p. -virtfs would be the shorthand,
+# but it gives no way to pass romfile=, which these builds need like every
+# other virtio device here, so the fsdev and the device are spelled out
+#
+# 9p has no notion of a guest mount point - it exports a mount_tag and the
+# guest decides where it lands - so the guest path is carried across as the
+# tag itself. The image's 9p-automount unit reads the tags back out of
+# /sys/bus/virtio/devices/*/mount_tag and mounts each share at the path its
+# tag spells, which is what lets VM_MOUNTS pick mount points without the
+# image having to know them at build time
+MOUNT_ARGS=()
+MOUNT_SUMMARY=()
+if [ -n "${VM_MOUNTS}" ]; then
+    mount_index=0
+    # A literal | separates pairs; splitting on it needs IFS rather than the
+    # usual word splitting, which would also break on spaces in a path
+    saved_ifs="${IFS}"
+    IFS='|'
+    # The split on IFS is the point here, so the unquoted expansion stays
+    # shellcheck disable=SC2206
+    mount_specs=(${VM_MOUNTS})
+    IFS="${saved_ifs}"
+
+    for spec in "${mount_specs[@]}"; do
+        [ -n "${spec}" ] || continue
+
+        host_path="${spec%%:*}"
+        guest_path="${spec#*:}"
+        if [ "${host_path}" = "${spec}" ] || [ -z "${host_path}" ] || [ -z "${guest_path}" ]; then
+            printf 'Malformed VM_MOUNTS entry: %s (expected <host>:<guest>)\n' "${spec}" >&2
+            exit 1
+        fi
+
+        # The value arrives quoted, so the shell never expanded ~ for us.
+        # The quoted ~ below is a pattern matching a literal tilde, which is
+        # the whole point, so SC2088's "use $HOME" does not apply
+        # shellcheck disable=SC2088
+        case "${host_path}" in
+        "~") host_path="${HOME}" ;;
+        "~/"*) host_path="${HOME}/${host_path#\~/}" ;;
+        esac
+
+        if [ ! -d "${host_path}" ]; then
+            printf 'VM_MOUNTS host path is not a directory: %s\n' "${host_path}" >&2
+            exit 1
+        fi
+
+        # The tag is the guest path verbatim, minus a trailing slash, because
+        # the guest resolves the mount point from it. A ~ stays literal: only
+        # the guest knows whose home that is
+        # shellcheck disable=SC2088
+        case "${guest_path}" in
+        /* | "~" | "~/"*) ;;
+        *)
+            printf 'VM_MOUNTS guest path must be absolute or start with ~: %s\n' "${guest_path}" >&2
+            exit 1
+            ;;
+        esac
+        tag="${guest_path}"
+        [ "${tag}" = "/" ] || tag="${tag%/}"
+
+        # qemu caps a mount tag at 31 bytes. Truncating or falling back to a
+        # positional tag would leave the guest mounting the wrong path, or
+        # nothing at all, with no error anywhere - the same silent miss this
+        # scheme exists to avoid - so refuse it here where it can be seen
+        if [ "${#tag}" -gt 31 ]; then
+            printf 'VM_MOUNTS guest path is %s bytes, over the 31 a 9p mount tag allows: %s\n' \
+                "${#tag}" "${guest_path}" >&2
+            exit 1
+        fi
+
+        # qemu's option parser splits on commas, so a comma in the path has
+        # to be doubled or it is read as the start of the next key=value
+        host_path_escaped="${host_path//,/,,}"
+
+        MOUNT_ARGS+=(
+            -fsdev "local,id=fsdev${mount_index},path=${host_path_escaped},security_model=${VM_MOUNT_SECURITY}"
+            -device "virtio-9p-pci,fsdev=fsdev${mount_index},mount_tag=${tag},romfile="
+        )
+        MOUNT_SUMMARY+=("${host_path} -> ${tag}")
+        mount_index=$((mount_index + 1))
+    done
+fi
+
+EXTRA_DRIVE_ARGS=()
+if [ -n "${VM_DISK}" ]; then
+    EXTRA_DRIVE_ARGS=(-drive "if=none,format=raw,file=${VM_DISK},id=disk1" "${EXTRA_DISK_DEVICE_ARGS[@]}")
+fi
+
 # SERIAL_PIPE is how tests/test_boot_qemu.sh drives the guest, so the console
 # stays on the pipe. Without a GPU keep forcing -display none, which is what
 # that test expects; with one, the window is the whole point
@@ -345,6 +475,12 @@ printf 'GPU:           %s\n' "${QEMU_GPU}"
 if [ "${QEMU_GPU}" != none ]; then
     printf 'Display:       %s\n' "${DISPLAY_ARG}"
 fi
+for summary in "${MOUNT_SUMMARY[@]}"; do
+    printf '9p mount:      %s\n' "${summary}"
+done
+if [ -n "${VM_DISK}" ]; then
+    printf 'Extra disk:    %s\n' "${VM_DISK}"
+fi
 printf '\n'
 
 exec "${QEMU_BIN}" \
@@ -357,7 +493,9 @@ exec "${QEMU_BIN}" \
     "${NET_ARGS[@]}" \
     "${AUDIO_ARGS[@]}" \
     "${GPU_ARGS[@]}" \
+    "${MOUNT_ARGS[@]}" \
     -drive if=pflash,format=raw,readonly=on,file="${FIRMWARE_CODE}" \
     -drive if=pflash,format=raw,file="${FIRMWARE_VARS}" \
     -drive if=none,format=raw,file="${DISK_IMAGE}",id=disk0 \
-    "${DISK_DEVICE_ARGS[@]}"
+    "${DISK_DEVICE_ARGS[@]}" \
+    "${EXTRA_DRIVE_ARGS[@]}"

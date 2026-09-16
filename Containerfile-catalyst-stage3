@@ -61,6 +61,18 @@ if [ "${SLIM:-0}" = "1" ]; then
     confdir_line="portage_confdir: /var/tmp/catalyst/confdir"
 fi
 
+# Cortex-A53 errata 843419/835769 linker workarounds for the whole @system
+# set, toolchain included. Same content as gentoo-config/env/cortex-a53-errata
+# and package.env.arm64, inlined because this image does not fetch
+# gentoo-config; keep the two in step. Only ld on aarch64 knows the options
+if [ "${SUBARCH}" = "arm64" ]; then
+    mkdir -p /var/tmp/catalyst/confdir/env /var/tmp/catalyst/confdir/package.env
+    printf 'LDFLAGS="${LDFLAGS} -Wl,--fix-cortex-a53-843419 -Wl,--fix-cortex-a53-835769"\n' \
+        > /var/tmp/catalyst/confdir/env/cortex-a53-errata
+    printf '*/* cortex-a53-errata\n' > /var/tmp/catalyst/confdir/package.env/cortex-a53-errata
+    confdir_line="portage_confdir: /var/tmp/catalyst/confdir"
+fi
+
 cat > /var/tmp/catalyst/stage3.spec <<SPEC
 subarch: ${SUBARCH}
 target: stage3

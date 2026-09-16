@@ -23,6 +23,8 @@ RUN curl -L "https://github.com/bbusse/gentoo-config/archive/refs/heads/${GENTOO
     cp /tmp/gentoo-config/package.use /etc/portage/package.use/ && \
     cp /tmp/gentoo-config/package.use.hwaccel /etc/portage/ && \
     cp /tmp/gentoo-config/package.use.hwaccel-amd64 /etc/portage/ && \
+    cp -r /tmp/gentoo-config/env /etc/portage/env && \
+    cp /tmp/gentoo-config/package.env.arm64 /etc/portage/ && \
     cp /tmp/gentoo-config/package.unmask/* /etc/portage/package.unmask/ && \
     cp /tmp/gentoo-config/package.accept_keywords /etc/portage/package.accept_keywords/ && \
     cp -r /tmp/gentoo-config/sets /etc/portage/sets && \
