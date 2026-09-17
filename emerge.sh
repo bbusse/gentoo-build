@@ -16,12 +16,9 @@ main() {
 
     printf "Building gentoo flavour: %s\n" "${target_flavour}"
 
-    # Cortex-A53 errata 843419/835769 linker workarounds, every arm64
-    # flavour: the boards these rootfs images end up on (pine64, rockpro64)
-    # have r0p4 cores. package.env rather than make.conf because make.conf
-    # is shared with amd64, whose ld rejects the options. The stage3 gets the
-    # same via the catalyst confdir, image-builder repeats this for its
-    # chroot merge. Details in gentoo-config/env/cortex-a53-errata
+    # Cortex-A53 errata linker workarounds for every arm64 flavour. Not in
+    # make.conf, that is shared with amd64 whose ld rejects the options.
+    # See gentoo-config/env/cortex-a53-errata
     case "$(uname -m)" in
     aarch64 | arm64)
         mkdir -p /etc/portage/package.env
