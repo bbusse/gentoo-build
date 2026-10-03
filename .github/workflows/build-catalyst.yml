@@ -1,0 +1,117 @@
+---
+# SPDX-FileCopyrightText: Björn Busse <bj.rn@baerlin.eu>
+# SPDX-License-Identifier: BSD-3-Clause
+
+name: Build Catalyst Container
+
+# Unconditional: the stage3 build is dispatch-only and consumes this image
+# from ghcr.io, so it has to be present and current there.
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - '**'
+  workflow_dispatch:
+    inputs:
+      snapshot_date:
+        description: >-
+          Portage snapshot to sync, as yyyymmdd. When omitted the current
+          snapshot is fetched, so the same recipe can yield a different
+          image on a different day.
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # Deliberately not container-build-push.yml: its build_args are a static
+  # string, so JOBS cannot be $(nproc), and it exposes no job timeout.
+  # Catalyst emerges perl, util-linux and Catalyst itself from source, so both
+  # matter here.
+  #
+  # The job name deliberately avoids a "Build " prefix: the stage4 pipeline's
+  # gates wait on check runs matching '^Build ' / '^(Build|Extract) ', and a
+  # catalyst build that can run for two hours must not hold those up.
+  catalyst:
+    name: Catalyst (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    env:
+      IMAGE: ghcr.io/bbusse/gentoo-catalyst-${{ matrix.arch }}:latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The runner's podman 4.9 does not parse the RUN heredocs in the
+      # Containerfiles, the RUN comes out empty and the next line is read as
+      # an instruction. podman-static ships current podman with crun, conmon
+      # and netavark for both runner arches, pinned by checksum. Ubuntu 24.04
+      # lets only AppArmor-profiled binaries create user namespaces and the
+      # distro profile covers /usr/bin/podman alone, so lift the restriction
+      # for the rootless build
+      - name: Install current podman
+        env:
+          ARCH: ${{ matrix.arch }}
+          VERSION: v6.1.3
+          SHA256_AMD64: dcfff14eae60569653c21eed75c96e5fd4140f23448637bc6e0ee75a12e1267a
+          SHA256_ARM64: 3c90aebf0ca901c1b1f198a4905bed3fd89110f2670348d5b92281ff14a94c2d
+        run: |
+          set -eu
+          case "$ARCH" in
+          amd64) sha="$SHA256_AMD64" ;;
+          arm64) sha="$SHA256_ARM64" ;;
+          *)
+              echo "no podman-static build for $ARCH" >&2
+              exit 1
+              ;;
+          esac
+          curl -fsSL -o podman.tar.gz \
+              "https://github.com/mgoltzsche/podman-static/releases/download/$VERSION/podman-linux-$ARCH.tar.gz"
+          echo "$sha  podman.tar.gz" | sha256sum -c -
+          tar -xzf podman.tar.gz
+          sudo cp -r "podman-linux-$ARCH/usr" "podman-linux-$ARCH/etc" /
+          rm -rf podman.tar.gz "podman-linux-$ARCH"
+          # podman looks for crun in /usr/bin first and finds the runner's
+          # old one, which rejects the OCI spec version podman 6 writes.
+          # conmon and the network helpers already resolve to the static ones
+          sudo mkdir -p /etc/containers/containers.conf.d
+          printf '[engine]\nruntime = "crun"\n\n[engine.runtimes]\ncrun = ["/usr/local/bin/crun"]\n' |
+              sudo tee /etc/containers/containers.conf.d/50-podman-static.conf >/dev/null
+          sudo sysctl -q -w kernel.apparmor_restrict_unprivileged_userns=0
+          podman --version
+
+      - name: Log in to ghcr
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+        run: |
+          set -eu
+          printf '%s' "$GHCR_TOKEN" | podman login ghcr.io -u "$GHCR_USER" --password-stdin
+
+      - name: Build catalyst
+        env:
+          SUBARCH: ${{ matrix.arch }}
+          SNAPSHOT_DATE: ${{ inputs.snapshot_date }}
+        run: |
+          set -eu
+          podman build \
+            --build-arg SUBARCH="$SUBARCH" \
+            --build-arg JOBS="$(nproc)" \
+            --build-arg SNAPSHOT_DATE="$SNAPSHOT_DATE" \
+            -f Containerfile-catalyst \
+            -t "$IMAGE" .
+
+      - name: Push
+        if: ${{ github.event_name != 'pull_request' }}
+        run: podman push "$IMAGE"
