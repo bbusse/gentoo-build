@@ -45,7 +45,10 @@ options = ["bindist"]
 compression_mode = "xz"
 CONF
 
-PROFILE="${PROFILE:-default/linux/${SUBARCH}/23.0}"
+case "${SUBARCH}" in
+armv7a_hardfp) PROFILE="${PROFILE:-default/linux/arm/23.0/armv7a_hf}" ;;
+*) PROFILE="${PROFILE:-default/linux/${SUBARCH}/23.0}" ;;
+esac
 
 snap=""
 for f in /var/tmp/catalyst/snapshots/gentoo-*; do

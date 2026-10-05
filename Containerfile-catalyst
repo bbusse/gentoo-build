@@ -68,7 +68,11 @@ if [ -n "${STAGE1:-}" ] && \
     exit 0
 fi
 # No valid tarball provided -- fetch the current stage3 from Gentoo mirrors.
-url_base="https://distfiles.gentoo.org/releases/${SUBARCH}/autobuilds"
+case "${SUBARCH}" in
+armv*) rel_arch=arm ;;
+*) rel_arch="${SUBARCH}" ;;
+esac
+url_base="https://distfiles.gentoo.org/releases/${rel_arch}/autobuilds"
 dir="current-stage3-${SUBARCH}-${VARIANT}"
 # latest-stage3-*.txt is PGP-signed and lists the bare filename; match on the
 # tarball extension to skip the PGP headers, then prepend the directory.
@@ -198,7 +202,8 @@ RUN emerge --quiet --oneshot --update sys-apps/portage
 # what is missing and leaves the seed's own versions alone.  USE requirements
 # (util-linux[python] above) are still honoured: emerge rebuilds a package
 # whose installed USE cannot satisfy a dependency atom
-RUN ACCEPT_KEYWORDS="~${SUBARCH}" emerge --quiet dev-util/catalyst sys-fs/squashfs-tools-ng
+RUN case "${SUBARCH}" in armv*) kw=arm ;; *) kw="${SUBARCH}" ;; esac && \
+    ACCEPT_KEYWORDS="~${kw}" emerge --quiet dev-util/catalyst sys-fs/squashfs-tools-ng
 
 RUN python3 - <<'PYFIX'
 import compileall, glob, re, sys
