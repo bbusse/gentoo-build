@@ -164,19 +164,19 @@ download_image() {
     printf 'Looking for %s\n' "${artifact}"
     local id
     if ! id="$(gh api "/repos/${DOWNLOAD_REPO}/actions/artifacts?per_page=100" \
-            --jq "[.artifacts[] | select(.name == \"${artifact}\") |
+        --jq "[.artifacts[] | select(.name == \"${artifact}\") |
                    select(.expired == false)] | first | .id" 2>&1)"; then
         printf 'Artifact lookup failed for %s: %s\n' "${DOWNLOAD_REPO}" "${id}" >&2
         exit 1
     fi
     if [ -z "${id}" ] || [ "${id}" = "null" ]; then
         printf 'No unexpired artifact named %s in %s\n' \
-               "${artifact}" "${DOWNLOAD_REPO}" >&2
+            "${artifact}" "${DOWNLOAD_REPO}" >&2
         exit 1
     fi
 
     printf 'Downloading artifact %s\n' "${id}"
-    gh api "/repos/${DOWNLOAD_REPO}/actions/artifacts/${id}/zip" > "${raw}.zip"
+    gh api "/repos/${DOWNLOAD_REPO}/actions/artifacts/${id}/zip" >"${raw}.zip"
 
     printf 'Unpacking %s sparsely\n' "${raw}"
     python3 - "${raw}.zip" "${raw}" <<'PYEOF'
@@ -301,8 +301,11 @@ else
     if [ -z "${QEMU_ACCEL}" ]; then
         if [ "${HOST_OS}" = "Darwin" ]; then
             QEMU_ACCEL="hvf"
-        else
+        elif [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
             QEMU_ACCEL="kvm"
+        else
+            # GitHub runners have no usable /dev/kvm and qemu aborts on it
+            QEMU_ACCEL="tcg"
         fi
     fi
     QEMU_MACHINE_ARG="${QEMU_MACHINE},accel=${QEMU_ACCEL}"
