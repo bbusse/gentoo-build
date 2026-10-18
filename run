@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Björn Busse <bj.rn@baerlin.eu>
 # SPDX-License-Identifier: BSD-3-Clause
 #
-# Usage: ./run [path-to-disk.raw|host-device]
+# Usage: ./run [path-to-disk.raw|path-to-disk.img|host-device]
 #        ./run download [target] [arch]
 #
 # path-to-disk.raw can also be a host device, e.g. /dev/disk4 on macOS, to
@@ -18,7 +18,9 @@
 # partition table and fails to find its root
 #
 # Environment:
-#   ARCH         Target arch to boot (amd64|arm64). Defaults to the host arch.
+#   ARCH         Target arch to boot (amd64|arm64). Defaults to the arch in
+#                the disk image's name (e.g. freebsd-amd64.img),
+#                else the host arch.
 #   DISK_IMAGE   Disk image to boot. Defaults to gentoo-containeros-<ARCH>.raw
 #   SERIAL_PIPE  Base path of a mkfifo pair (<base>.in/<base>.out). When set,
 #                the guest console is wired to it instead of the terminal.
@@ -84,6 +86,16 @@ x86_64 | amd64) HOST_ARCH="amd64" ;;
     ;;
 esac
 
+# Without ARCH, take the arch from an image name that spells one, e.g.
+# freebsd-amd64.img or gentoo-sway-virt-arm64.raw, so booting
+# a foreign-arch image doesn't need ARCH spelled out next to it. Anything
+# else, a host device included, falls back to the host arch
+if [ -z "${ARCH}" ] && [ "${1:-}" != "download" ]; then
+    case "$(basename "${1:-${DISK_IMAGE:-x}}")" in
+    *-amd64.* | *-amd64) ARCH="amd64" ;;
+    *-arm64.* | *-arm64) ARCH="arm64" ;;
+    esac
+fi
 ARCH="${ARCH:-${HOST_ARCH}}"
 QEMU_MEM="${QEMU_MEM:-2048}"
 

@@ -42,7 +42,7 @@ main() {
                --buildpkg-exclude \
                "virtual/* \
                sys-kernel/*-sources" \
-               @container-podman \
+               @containers \
                @essentials \
                @net
         ;;
@@ -94,19 +94,6 @@ main() {
                @sway-virt \
                @essentials \
                @virt \
-               @net
-        ;;
-    k3s)
-         emerge -qv \
-             --jobs "${emerge_jobs}" \
-             --load-average "${emerge_load}" \
-             --newuse --update \
-               --buildpkg \
-               --buildpkg-exclude \
-               "virtual/* \
-               sys-kernel/*-sources" \
-               @k8s \
-               @essentials \
                @net
         ;;
     esac
