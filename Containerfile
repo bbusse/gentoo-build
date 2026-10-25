@@ -56,7 +56,12 @@ RUN target_arch="${TARGET_ARCH}" && \
     rm -rf /var/.git || printf "No .git in /var\n" && \
     rm -rf /var/tmp/.git || printf "No .git in /var/tmp\n" && \
     emerge.sh "${TARGET_FLAVOUR}" && \
-    tar -cJf /gentoo-stage4-${TARGET_FLAVOUR}-${target_arch}.tar.xz /var/cache/binpkgs && \
+    mkdir -p /etc/gentoo-build && \
+    stamp="$(date -u -d "$(cat /var/db/repos/gentoo/metadata/timestamp.chk)" +%s)" && \
+    date -u -d "@$((stamp - 86400))" +%Y%m%d > /etc/gentoo-build/portage-snapshot && \
+    printf '%s\n' "${GENTOO_OVERLAYS}" > /etc/gentoo-build/overlays && \
+    tar -cJf /gentoo-stage4-${TARGET_FLAVOUR}-${target_arch}.tar.xz /var/cache/binpkgs \
+        /etc/gentoo-build/portage-snapshot /etc/gentoo-build/overlays && \
     sha384sum /gentoo-stage4-${TARGET_FLAVOUR}-${target_arch}.tar.xz > /gentoo-stage4-${TARGET_FLAVOUR}-${target_arch}.tar.xz.sha384 && \
     cp /gentoo-stage4-${TARGET_FLAVOUR}-${target_arch}.tar.xz /output && \
     cp /gentoo-stage4-${TARGET_FLAVOUR}-${target_arch}.tar.xz.sha384 /output
