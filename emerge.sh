@@ -34,17 +34,30 @@ main() {
 
     case "${target_flavour}" in
     containeros)
-         emerge -qv \
-             --jobs "${emerge_jobs}" \
-             --load-average "${emerge_load}" \
-             --newuse --update \
-               --buildpkg \
-               --buildpkg-exclude \
-               "virtual/* \
+        emerge -qv \
+            --jobs "${emerge_jobs}" \
+            --load-average "${emerge_load}" \
+            --newuse --update \
+            --buildpkg \
+            --buildpkg-exclude \
+            "virtual/* \
                sys-kernel/*-sources" \
-               @containers \
-               @essentials \
-               @net
+            @containers \
+            @essentials \
+            @net
+        ;;
+    k8s)
+        emerge -qv \
+            --jobs "${emerge_jobs}" \
+            --load-average "${emerge_load}" \
+            --newuse --update \
+            --buildpkg \
+            --buildpkg-exclude \
+            "virtual/* \
+               sys-kernel/*-sources" \
+            @k8s \
+            @essentials \
+            @net
         ;;
     sway)
         # Real hardware, unlike sway-virt: build mesa with the Gallium
@@ -65,36 +78,40 @@ main() {
             ;;
         esac
 
-         emerge -qv \
-             --jobs "${emerge_jobs}" \
-             --load-average "${emerge_load}" \
-             --newuse --update \
-               --buildpkg \
-               --buildpkg-exclude \
-               "virtual/* \
+        emerge -qv \
+            --jobs "${emerge_jobs}" \
+            --load-average "${emerge_load}" \
+            --newuse --update \
+            --buildpkg \
+            --buildpkg-exclude \
+            "virtual/* \
                sys-kernel/*-sources" \
-               @dev \
-               @dev-lang \
-               @sway \
-               @essentials \
-               @virt \
-               @net
+            @dev \
+            @dev-lang \
+            @sway \
+            @essentials \
+            @virt \
+            @net
         ;;
     sway-virt)
-         emerge -qv \
-             --jobs "${emerge_jobs}" \
-             --load-average "${emerge_load}" \
-             --newuse --update \
-               --buildpkg \
-               --buildpkg-exclude \
-               "virtual/* \
+        emerge -qv \
+            --jobs "${emerge_jobs}" \
+            --load-average "${emerge_load}" \
+            --newuse --update \
+            --buildpkg \
+            --buildpkg-exclude \
+            "virtual/* \
                sys-kernel/*-sources" \
-               @dev \
-               @dev-lang \
-               @sway-virt \
-               @essentials \
-               @virt \
-               @net
+            @dev \
+            @dev-lang \
+            @sway-virt \
+            @essentials \
+            @virt \
+            @net
+        ;;
+    *)
+        printf "Unknown gentoo flavour: %s\n" "${target_flavour}" >&2
+        exit 1
         ;;
     esac
 }
