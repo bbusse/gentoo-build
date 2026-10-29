@@ -33,6 +33,10 @@
 #                when qemu was built without libslirp.
 #   QEMU_NET_IFACE Host interface vmnet-bridged bridges onto. Defaults to the
 #                interface of the default route, e.g. en0.
+#   QEMU_MAC     MAC address of the guest's NIC. Defaults to one derived from
+#                the disk image's path, so two guests bridged onto one LAN
+#                never share qemu's 52:54:00:12:34:56 and each disk keeps its
+#                DHCP lease across runs
 #   QEMU_ACCEL   Accelerator to request when guest arch matches the host.
 #   QEMU_MEM     Guest memory in MB. Defaults to 2048.
 #   QEMU_AUDIODEV Audio backend for virtio-sound (coreaudio|alsa|pa|none|...).
@@ -236,7 +240,7 @@ DISK_IMAGE="${1:-${DISK_IMAGE:-gentoo-containeros-${ARCH}.raw}}"
 
 # vmnet backends need root
 if [[ "${QEMU_NET}" == vmnet-* ]] && [ "$(id -u)" -ne 0 ]; then
-    exec sudo --preserve-env=ARCH,DISK_IMAGE,SERIAL_PIPE,QEMU_NET,QEMU_NET_IFACE,QEMU_ACCEL,QEMU_MEM,QEMU_AUDIODEV,QEMU_GPU,QEMU_DISPLAY,QEMU_GL,VM_MOUNTS,VM_MOUNT_SECURITY,VM_DISK "$0" "$@"
+    exec sudo --preserve-env=ARCH,DISK_IMAGE,SERIAL_PIPE,QEMU_NET,QEMU_NET_IFACE,QEMU_MAC,QEMU_ACCEL,QEMU_MEM,QEMU_AUDIODEV,QEMU_GPU,QEMU_DISPLAY,QEMU_GL,VM_MOUNTS,VM_MOUNT_SECURITY,VM_DISK "$0" "$@"
 fi
 
 if ! command -v "${QEMU_BIN}" >/dev/null 2>&1; then
@@ -329,6 +333,11 @@ else
     QEMU_MACHINE_ARG="${QEMU_MACHINE},accel=${QEMU_ACCEL}"
 fi
 
+if [ -z "${QEMU_MAC}" ]; then
+    disk_path="$(cd "$(dirname "${DISK_IMAGE}")" && pwd -P)/$(basename "${DISK_IMAGE}")"
+    QEMU_MAC="$(printf '%s' "${disk_path}" | cksum | awk '{ printf "52:54:00:%02x:%02x:%02x", int($1 / 65536) % 256, int($1 / 256) % 256, $1 % 256 }')"
+fi
+
 # "user" needs a qemu built with libslirp, which the virgl-capable builds
 # often are not; allow turning the NIC off rather than failing with
 # "network backend 'user' is not compiled into this binary"
@@ -341,16 +350,16 @@ vmnet-bridged)
         printf 'No default route to take a bridge interface from; set QEMU_NET_IFACE\n' >&2
         exit 1
     fi
-    NET_ARGS=(-netdev "vmnet-bridged,id=net0,ifname=${QEMU_NET_IFACE}" -device "virtio-net-pci,netdev=net0,romfile=")
+    NET_ARGS=(-netdev "vmnet-bridged,id=net0,ifname=${QEMU_NET_IFACE}" -device "virtio-net-pci,netdev=net0,mac=${QEMU_MAC},romfile=")
     ;;
 vmnet-shared)
-    NET_ARGS=(-netdev "vmnet-shared,id=net0" -device "virtio-net-pci,netdev=net0,romfile=")
+    NET_ARGS=(-netdev "vmnet-shared,id=net0" -device "virtio-net-pci,netdev=net0,mac=${QEMU_MAC},romfile=")
     ;;
 none)
     NET_ARGS=(-nic none)
     ;;
 *)
-    NET_ARGS=(-nic "user,model=virtio-net-pci")
+    NET_ARGS=(-nic "user,model=virtio-net-pci,mac=${QEMU_MAC}")
     ;;
 esac
 
@@ -501,6 +510,7 @@ printf 'Disk image:    %s\n' "${DISK_IMAGE}"
 printf 'Firmware code: %s\n' "${FIRMWARE_CODE}"
 printf 'Firmware vars: %s\n' "${FIRMWARE_VARS_SRC}"
 printf 'Networking:    %s%s\n' "${QEMU_NET}" "${QEMU_NET_IFACE:+ (${QEMU_NET_IFACE})}"
+printf 'MAC:           %s\n' "${QEMU_MAC}"
 printf 'Audio:         %s\n' "${QEMU_AUDIODEV}"
 printf 'GPU:           %s\n' "${QEMU_GPU}"
 if [ "${QEMU_GPU}" != none ]; then
