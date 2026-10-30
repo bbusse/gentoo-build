@@ -29,6 +29,7 @@ entry_pattern() {
     nomadbsd) echo "FreeBSD" ;;
     refind) echo "rEFInd - Main Menu" ;;
     u-root) echo "u-root" ;;
+    9front) echo "init: starting /bin/rc" ;;
     *) echo "[Ll]ogin:" ;;
     esac
 }
@@ -122,6 +123,12 @@ test_every_boot_entry_reaches_its_system() {
     local entry
     for entry in ${entries}; do
         if [ "${entry}" = "${default}" ]; then
+            continue
+        fi
+        # A board's kernel brings its own devicetree, qemu's virt machine
+        # is not that board
+        if mtype -i "${ESP}" "::/loader/entries/${entry}.conf" | awk '$1 == "devicetree" {f=1} END {exit !f}'; then
+            printf 'boot entry %s: skipped, a board kernel\n' "${entry}"
             continue
         fi
         printf 'boot entry %s: waiting for /%s/\n' "${entry}" "$(entry_pattern "${entry}")"
