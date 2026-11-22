@@ -24,13 +24,17 @@
 #   DISK_IMAGE   Disk image to boot. Defaults to gentoo-containeros-<ARCH>.raw
 #   SERIAL_PIPE  Base path of a mkfifo pair (<base>.in/<base>.out). When set,
 #                the guest console is wired to it instead of the terminal.
-#   QEMU_NET     user|vmnet-bridged|vmnet-shared|none. Defaults to
+#   QEMU_NET     user|bridge|vmnet-bridged|vmnet-shared|none. Defaults to
 #                vmnet-bridged on macOS (needs root) and user everywhere else.
 #                vmnet-bridged puts the guest on the host's LAN with its own
 #                DHCP lease, so it can reach and be reached by devices there,
 #                broadcast and mDNS discovery included. vmnet-shared NATs the
-#                guest behind the host on a private subnet instead. Use none
-#                when qemu was built without libslirp.
+#                guest behind the host on a private subnet instead. bridge
+#                is the Linux equivalent of vmnet-bridged: it attaches the
+#                guest to the host bridge QEMU_BRIDGE (default br0) through
+#                qemu-bridge-helper, which needs "allow <bridge>" in
+#                /etc/qemu/bridge.conf. Use none when qemu was built without
+#                libslirp.
 #   QEMU_NET_IFACE Host interface vmnet-bridged bridges onto. Defaults to the
 #                interface of the default route, e.g. en0.
 #   QEMU_MAC     MAC address of the guest's NIC. Defaults to one derived from
@@ -39,6 +43,7 @@
 #                DHCP lease across runs
 #   QEMU_ACCEL   Accelerator to request when guest arch matches the host.
 #   QEMU_MEM     Guest memory in MB. Defaults to 2048.
+#   QEMU_SMP     Guest CPUs. Defaults to 1.
 #   QEMU_AUDIODEV Audio backend for virtio-sound (coreaudio|alsa|pa|none|...).
 #                Defaults to coreaudio on macOS, none (silent, no host audio
 #                dependency) everywhere else.
@@ -240,7 +245,7 @@ DISK_IMAGE="${1:-${DISK_IMAGE:-gentoo-containeros-${ARCH}.raw}}"
 
 # vmnet backends need root
 if [[ "${QEMU_NET}" == vmnet-* ]] && [ "$(id -u)" -ne 0 ]; then
-    exec sudo --preserve-env=ARCH,DISK_IMAGE,SERIAL_PIPE,QEMU_NET,QEMU_NET_IFACE,QEMU_MAC,QEMU_ACCEL,QEMU_MEM,QEMU_AUDIODEV,QEMU_GPU,QEMU_DISPLAY,QEMU_GL,VM_MOUNTS,VM_MOUNT_SECURITY,VM_DISK "$0" "$@"
+    exec sudo --preserve-env=ARCH,DISK_IMAGE,SERIAL_PIPE,QEMU_NET,QEMU_NET_IFACE,QEMU_MAC,QEMU_ACCEL,QEMU_MEM,QEMU_SMP,QEMU_AUDIODEV,QEMU_GPU,QEMU_DISPLAY,QEMU_GL,VM_MOUNTS,VM_MOUNT_SECURITY,VM_DISK "$0" "$@"
 fi
 
 if ! command -v "${QEMU_BIN}" >/dev/null 2>&1; then
@@ -354,6 +359,9 @@ vmnet-bridged)
     ;;
 vmnet-shared)
     NET_ARGS=(-netdev "vmnet-shared,id=net0" -device "virtio-net-pci,netdev=net0,mac=${QEMU_MAC},romfile=")
+    ;;
+bridge)
+    NET_ARGS=(-netdev "bridge,id=net0,br=${QEMU_BRIDGE:-br0}" -device "virtio-net-pci,netdev=net0,mac=${QEMU_MAC},romfile=")
     ;;
 none)
     NET_ARGS=(-nic none)
@@ -526,6 +534,7 @@ printf '\n'
 
 exec "${QEMU_BIN}" \
     -m "${QEMU_MEM}" \
+    -smp "${QEMU_SMP:-1}" \
     -machine "${QEMU_MACHINE_ARG}" \
     -cpu "${QEMU_CPU}" \
     -no-reboot \
