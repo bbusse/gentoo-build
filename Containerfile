@@ -10,7 +10,7 @@ LABEL org.opencontainers.image.source=https://github.com/bbusse/gentoo-build
 COPY --from=portage /var/db/repos/gentoo /var/db/repos/gentoo
 
 RUN mkdir -p /etc/portage/package.use && \
-    mkdir -p /etc/portage/package.unmask
+    mkdir -p /etc/portage/package.unmask /etc/portage/package.mask
 
 COPY emerge.sh /usr/local/bin
 
@@ -26,6 +26,7 @@ RUN curl -L "https://github.com/bbusse/gentoo-config/archive/refs/heads/${GENTOO
     cp -r /tmp/gentoo-config/env /etc/portage/env && \
     cp /tmp/gentoo-config/package.env.arm64 /etc/portage/ && \
     cp /tmp/gentoo-config/package.unmask/* /etc/portage/package.unmask/ && \
+    cp /tmp/gentoo-config/package.mask/* /etc/portage/package.mask/ && \
     cp /tmp/gentoo-config/package.accept_keywords /etc/portage/package.accept_keywords/ && \
     cp -r /tmp/gentoo-config/sets /etc/portage/sets && \
     rm -rf /tmp/gentoo-config
