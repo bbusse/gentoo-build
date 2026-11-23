@@ -23,6 +23,9 @@ main() {
     aarch64 | arm64)
         mkdir -p /etc/portage/package.env
         cp /etc/portage/package.env.arm64 /etc/portage/package.env/cortex-a53-errata
+        # graphene with NEON, see gentoo-config/profile.arm64
+        mkdir -p /etc/portage/profile
+        cp -r /etc/portage/profile.arm64/. /etc/portage/profile/
         ;;
     esac
 
