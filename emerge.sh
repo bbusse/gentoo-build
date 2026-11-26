@@ -2,6 +2,25 @@
 
 set -eo pipefail
 
+# Remove the binpkgs no installed package came from, the seed's leftovers,
+# so the stage4 tarball holds what this build installed and nothing older
+prune_binpkgs() {
+    find /var/cache/binpkgs -name '*.gpkg.tar' | awk -F/ '
+    {
+        f = $NF
+        sub(/\.gpkg\.tar$/, "", f)
+        id = f
+        sub(/.*-/, "", id)
+        sub(/-[0-9]+$/, "", f)
+        v = "/var/db/pkg/" $(NF - 2) "/" f "/BUILD_ID"
+        b = ""
+        if ((getline b < v) <= 0 || b != id)
+            print
+        close(v)
+    }' | xargs -r rm -f
+    emaint binhost --fix
+}
+
 main() {
     local target_flavour
     target_flavour="${1}"
@@ -29,6 +48,13 @@ main() {
         ;;
     esac
 
+    # Binpkgs of the last published stage4 of this flavour, mounted by
+    # image-builder. --usepkg installs those whose USE and deps still match
+    if [ -f /var/cache/binpkgs-seed/Packages ]; then
+        mkdir -p /var/cache/binpkgs
+        cp -a /var/cache/binpkgs-seed/. /var/cache/binpkgs/
+    fi
+
     # --newuse --update reconciles USE differences against what the stage3
     # already has installed instead of erroring out on a slot conflict. rust
     # wants net-misc/curl[http2] while the stage3 ships curl without it, which
@@ -41,6 +67,7 @@ main() {
             --jobs "${emerge_jobs}" \
             --load-average "${emerge_load}" \
             --newuse --update \
+            --usepkg \
             --buildpkg \
             --buildpkg-exclude \
             "virtual/* \
@@ -54,6 +81,7 @@ main() {
             --jobs "${emerge_jobs}" \
             --load-average "${emerge_load}" \
             --newuse --update \
+            --usepkg \
             --buildpkg \
             --buildpkg-exclude \
             "virtual/* \
@@ -85,6 +113,7 @@ main() {
             --jobs "${emerge_jobs}" \
             --load-average "${emerge_load}" \
             --newuse --update \
+            --usepkg \
             --buildpkg \
             --buildpkg-exclude \
             "virtual/* \
@@ -101,6 +130,7 @@ main() {
             --jobs "${emerge_jobs}" \
             --load-average "${emerge_load}" \
             --newuse --update \
+            --usepkg \
             --buildpkg \
             --buildpkg-exclude \
             "virtual/* \
@@ -117,6 +147,8 @@ main() {
         exit 1
         ;;
     esac
+
+    prune_binpkgs
 }
 
 main "$@"
